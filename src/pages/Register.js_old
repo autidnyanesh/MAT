@@ -1,0 +1,62 @@
+import React, { useState } from "react";
+import "../styles/login.css";
+
+function Register({ goToLogin }) {
+  const [form, setForm] = useState({
+    username: "",
+    password: "",
+    role: "DCOC"
+  });
+
+  const handleRegister = () => {
+    alert("User Registered (Demo Only)");
+    goToLogin();
+  };
+
+  return (
+    <div className="bank-login-container">
+      <div className="overlay"></div>
+
+      <div className="login-card">
+        <h2 className="bank-title">Operation Team Registration</h2>
+
+        <input
+          type="text"
+          placeholder="User ID"
+          onChange={(e) =>
+            setForm({ ...form, username: e.target.value })
+          }
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          onChange={(e) =>
+            setForm({ ...form, password: e.target.value })
+          }
+        />
+
+        <div className="role-select-label">Select Role:
+        <select
+          onChange={(e) =>
+            setForm({ ...form, role: e.target.value })
+          }
+        >
+          <option value="DCOC">DCOC</option>
+          <option value="DCOA">DCOA</option>
+          <option value="DCOD">DCOD</option>
+        </select>
+        </div>
+
+        <button onClick={handleRegister}>Register</button>
+
+        <h3 className="signup-text">
+          Already have an account?{" "}
+          <span onClick={goToLogin}>Login</span>
+        </h3>
+      </div>
+    </div>
+  );
+}
+
+export default Register;
