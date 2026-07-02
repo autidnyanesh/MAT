@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
+// import { FaEllipsisV } from "react-icons/fa";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import AlertModal from "../../components/AlertModel";
 import ConfirmModal from "../../components/ComfirmModel";
-import api from "../../api/axiosConfig";
-import { maskAccountNumber } from "../../utils/sanitize";
+import axios from "axios";
 
 const MyRequest = () => {
 
@@ -99,7 +99,7 @@ const MyRequest = () => {
     };
     const handleDelete = async () => {
         try {
-            await api.delete(
+            await axios.delete(
                 `/api/request/${confirmConfig.requestId}`
             );
             setAlertConfig({
@@ -619,7 +619,7 @@ const MyRequest = () => {
                                         </label>
                                         <input
                                             className="form-control"
-                                            value={maskAccountNumber(selectedRequest.accountNo || "")}
+                                            value={selectedRequest.accountNo || ""}
                                             readOnly
                                         />
                                     </div>
