@@ -10,14 +10,56 @@ import {
   FaClipboardList,
   FaInbox,
   FaUser,
+  FaCloudDownloadAlt,
+  FaCloudUploadAlt,
 } from "react-icons/fa";
 
 function Sidebar({ expanded, onToggle }) {
   const location = useLocation();
-  const [requestOpen, setRequestOpen] = useState(false);
+  const [openSubmenu, setOpenSubmenu] = useState(null);
 
   const isActive = (path) => location.pathname === path;
-  const isParentActive = (paths) => paths.some((path) => location.pathname === path);
+  const isParentActive = (paths) => paths.some((path) => path && location.pathname === path);
+
+  const renderMenuItem = (item, level = 0) => {
+    const hasChildren = Boolean(item.children?.length);
+    const isSectionActive = hasChildren
+      ? isParentActive(item.children.flatMap(c => c.children ? c.children.map(x => x.to) : [c.to]).filter(Boolean))
+      : false;
+    const isOpen = openSubmenu === item.label;
+
+    if (!hasChildren) {
+      return (
+        <Link
+          key={item.to}
+          to={item.to}
+          className={`sidebar-link ${isActive(item.to) ? "active" : ""}`}
+          title={expanded ? "" : item.label}
+          style={{ paddingLeft: `${12 + level * 16}px` }}
+        >
+          <span className="sidebar-icon">{item.icon}</span>
+          {expanded && <span className="sidebar-label">{item.label}</span>}
+        </Link>
+      );
+    }
+
+    return (
+      <div
+        key={item.label}
+        className="sidebar-section"
+        onMouseEnter={() => setOpenSubmenu(item.label)}
+        onMouseLeave={() => setOpenSubmenu(null)}
+      >
+        <div className={`sidebar-link section-label ${isSectionActive ? "active" : ""}`} style={{ paddingLeft: `${12 + level * 16}px` }}>
+          <span className="sidebar-icon">{item.icon}</span>
+          {expanded && <span className="sidebar-label">{item.label}</span>}
+        </div>
+        <div className={`sidebar-submenu ${isOpen ? "open" : ""}`}>
+          {item.children.map((child) => renderMenuItem(child, level + 1))}
+        </div>
+      </div>
+    );
+  };
 
   const menuItems = [
     { to: "/", label: "Dashboard", icon: <FaTachometerAlt /> },
@@ -26,13 +68,27 @@ function Sidebar({ expanded, onToggle }) {
       icon: <FaFileInvoiceDollar />,
       children: [
         { to: "/raise-request", label: "Raise Request", icon: <FaPlus /> },
-        { to: "/my-request", label: "My Requests", icon: <FaClipboardList /> },
-        { to: "/referred-request", label: "Referred Back Requests", icon: <FaInbox /> },
-        { to: "/enquiry", label: "Enquiry", icon: <FaUsers /> },
-        { to: "/archival-enquiry", label: "Archival Enquiry", icon: <FaShieldAlt /> },
+        {
+          label: "Request Processing",
+          icon: <FaClipboardList />,
+          children: [
+            { to: "/my-request", label: "View Request", icon: <FaClipboardList /> },
+            { to: "/referred-request", label: "Referred Back Request", icon: <FaInbox /> },
+            { to: "/rejected", label: "Reject Request", icon: <FaUsers /> },
+            { to: "/archival-enquiry", label: "Archival Request", icon: <FaShieldAlt /> },
+          ],
+        },
       ],
     },
     { to: "/report", label: "Reports", icon: <FaFileAlt /> },
+    {
+      label: "File Handling",
+      icon: <FaCloudDownloadAlt />,
+      children: [
+        { to: "/file-handling", label: "Vendor File Download", icon: <FaCloudDownloadAlt /> },
+        { to: "/arn-file-handling", label: "ARN File Handling", icon: <FaCloudUploadAlt /> },
+      ],
+    },
     { to: "/profile-management", label: "Profile", icon: <FaUser /> },
   ];
 
@@ -49,48 +105,7 @@ function Sidebar({ expanded, onToggle }) {
       </div>
 
       <nav className="sidebar-nav">
-        {menuItems.map((item, index) => {
-          const isSectionActive = item.children ? isParentActive(item.children.map((child) => child.to)) : false;
-          return (
-            <div
-              key={index}
-              className="sidebar-section"
-              onMouseEnter={() => item.children && setRequestOpen(true)}
-              onMouseLeave={() => item.children && setRequestOpen(false)}
-            >
-              {!item.children ? (
-                <Link
-                  to={item.to}
-                  className={`sidebar-link ${isActive(item.to) ? "active" : ""}`}
-                  title={expanded ? "" : item.label}
-                >
-                  <span className="sidebar-icon">{item.icon}</span>
-                  {expanded && <span className="sidebar-label">{item.label}</span>}
-                </Link>
-              ) : (
-                <>
-                  <div className={`sidebar-link section-label ${isSectionActive ? "active" : ""}`}>
-                    <span className="sidebar-icon">{item.icon}</span>
-                    {expanded && <span className="sidebar-label">{item.label}</span>}
-                  </div>
-                  <div className={`sidebar-submenu ${requestOpen ? "open" : ""}`}>
-                    {item.children.map((child) => (
-                      <Link
-                        key={child.to}
-                        to={child.to}
-                        className={`sidebar-link sidebar-child ${isActive(child.to) ? "active" : ""}`}
-                        title={expanded ? "" : child.label}
-                      >
-                        <span className="sidebar-icon">{child.icon}</span>
-                        {expanded && <span className="sidebar-label">{child.label}</span>}
-                      </Link>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
+        {menuItems.map((item) => renderMenuItem(item))}
       </nav>
 
     </aside>

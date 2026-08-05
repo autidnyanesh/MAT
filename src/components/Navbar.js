@@ -14,7 +14,9 @@ import {
   FaChevronDown,
   FaFile,
   FaUserCircle,
+  FaUndo
 } from "react-icons/fa";
+import "../styles/main.css";
 
 function Navbar({
   user,
@@ -24,7 +26,9 @@ function Navbar({
 }) {
   const location = useLocation();
 
+  const [isMEA, setIsMEA] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [fileHandlingOpen, setFileHandlingOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
@@ -32,111 +36,135 @@ function Navbar({
     BU: [
       {
         to: "/raise-request",
-        label: "Raise Request",
-        icon: <FaPlus />,
+        label: "Raise Requests",
+        // icon: <FaPlus />,
+      },
+      // {
+      //   to: "/vendor-rejected-refund",
+      //   label: "Vendor Rejected Reversal",
+      //   // icon: <FaPlus />,
+      // },
+      {
+        to: "/dco-approval-queue",
+        label: "Approval Queue",
+        // icon: <FaShieldAlt />,
+      },
+      {
+        to: "/vendor-rejected-resumbit",
+        label: "Vendor Rejected Re-submit",
+        // icon: <FaPlus />,
       },
       {
         to: "/my-request",
-        label: "My Requests",
-        icon: <FaClipboardList />,
+        label: "View Requests",
+        // icon: <FaClipboardList />,
       },
       {
         to: "/referred-request",
         label: "Referred Back Requests",
-        icon: <FaInbox />,
+        // icon: <FaInbox />,
       },
       {
-        to: "/enquiry",
-        label: "Enquiry",
-        icon: <FaUsers />,
+        to: "/rejected",
+        label: "Rejected Requests",
+        // icon: <FaUsers />,
       },
       {
         to: "/archival-enquiry",
         label: "Archival Enquiry",
-        icon: <FaShieldAlt />,
-      },
-    ],
-
-    SOM: [
-      {
-        to: "/raise-request",
-        label: "Raise Request",
-        icon: <FaPlus />,
-      },
-      {
-        to: "/my-request",
-        label: "My Requests",
-        icon: <FaClipboardList />,
-      },
-      {
-        to: "/approval-queue",
-        label: "Approval Queue",
-        icon: <FaShieldAlt />,
-      },
-    ],
-
-    BH: [
-      {
-        to: "/approval-queue",
-        label: "Approval Queue",
-        icon: <FaShieldAlt />,
-      },
-    ],
-
-    RH: [
-      {
-        to: "/approval-queue",
-        label: "Approval Queue",
-        icon: <FaShieldAlt />,
+        // icon: <FaShieldAlt />,
       },
     ],
 
     DCO: [
       {
-        to: "/approval-queue",
+        to: "/dco-approval-queue",
         label: "Approval Queue",
-        icon: <FaShieldAlt />,
+        // icon: <FaShieldAlt />,
+      },
+      // {
+      //   to: "/rejection-after-txn",
+      //   label: "Retry Transaction",
+      //   // icon: <FaFileAlt />,
+      // },
+      {
+        to: "/vendor-rejected-refund",
+        label: "Vendor Rejected Reversal",
+        // icon: <FaPlus />,
       },
       {
-        to: "/profile-management",
-        label: "Profile Management",
-        icon: <FaUser />,
-      },
-      {
-        to: "/archival-enquiry",
-        label: "Archival Enquiry",
-        icon: <FaInbox />,
+        to: "/vendor-rejected-resumbit",
+        label: "Vendor Rejected Re-submit",
+        // icon: <FaPlus />,
       },
     ],
 
-    AGM: [
+    DCOC: [
       {
-        to: "/final-approval",
-        label: "Final Approval",
-        icon: <FaShieldAlt />,
+        to: "/dco-checker-approval-queue",
+        label: "Approval Queue",
+        // icon: <FaShieldAlt />,
       },
-    ],
-
-    DGM: [
+      // {
+      //   to: "/final-approval",
+      //   label: "Final Approval",
+      //   // icon: <FaShieldAlt />,
+      // },
       {
-        to: "/final-approval",
-        label: "Final Approval",
-        icon: <FaShieldAlt />,
+        to: "/vendor-rejected-refund",
+        label: "Vendor Rejected Reversal",
+        // icon: <FaPlus />,
       },
+      {
+        to: "/vendor-rejected-resumbit",
+        label: "Vendor Rejected Re-submit",
+        // icon: <FaPlus />,
+      },
+      // {
+      //   to: "/retry-transaction",
+      //   label: "Retry Transaction",
+      //   // icon: <FaUndo />,
+      // },
     ],
   };
 
+
   const menus = roleMenus[user?.role] || [];
+  // const requestProcessingMenus = [
+  //   { to: "/my-request", label: "View Request", icon: <FaClipboardList /> },
+  //   { to: "/referred-request", label: "Referred Back Request", icon: <FaInbox /> },
+  //   { to: "/rejected", label: "Reject Request", icon: <FaUsers /> },
+  //   { to: "/archival-enquiry", label: "Archival Request", icon: <FaShieldAlt /> },
+  // ];
 
   const isRequestMenuActive = menus.some(
     menu => location.pathname === menu.to
   );
 
+  const fileHandlingMenus = [
+    {
+      to: "/sftp-upload",
+      label: "SFTP Upload",
+    },
+    {
+      to: "/arn-handling",
+      label: "ARN Handling",
+    },
+  ];
+
+  const isFileHandlingActive = fileHandlingMenus.some(
+    menu => location.pathname === menu.to
+  );
+
+  const handleApplicationSwitch = () => {
+    setIsMEA(!isMEA);
+  };
+
   return (
     <div>
       <nav className="navbar navbar-expand-lg navbar-light shadow-sm mat-navbar px-3">
 
-        <div className="container-fluid">
+        <div className="container-fluid" style={{ fontWeight: "500" }}>
 
           <Link
             to="/"
@@ -177,14 +205,11 @@ function Navbar({
           >
             <span className="navbar-toggler-icon"></span>
           </button>
-
           <div
             className="collapse navbar-collapse"
             id="mainNavbar"
           >
-
             <ul className="navbar-nav me-auto ms-4" style={{ gap: "12px" }}>
-
               <li className="nav-item">
                 <Link
                   className={`nav-link ${location.pathname === "/"
@@ -197,9 +222,8 @@ function Navbar({
                   Dashboard
                 </Link>
               </li>
-
               <li
-                className="nav-item dropdown"
+                className="nav-item dropdown position-relative"
                 onMouseEnter={() => setRequestOpen(true)}
                 onMouseLeave={() => setRequestOpen(false)}
               >
@@ -212,19 +236,10 @@ function Navbar({
                 >
                   <FaFileInvoiceDollar className="me-1" />
 
-                  <span
-                    onClick={() => setRequestOpen(true)}
-                  >
-                    Request Handling
-                  </span>
+                  <span>Request Handling</span>
 
                   <FaChevronDown
-                    className={`ms-2 transition-arrow ${requestOpen ? "rotate-arrow" : ""
-                      }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRequestOpen(!requestOpen);
-                    }}
+                    className={`ms-2 ${requestOpen ? "rotate-arrow" : ""}`}
                   />
                 </div>
 
@@ -232,28 +247,60 @@ function Navbar({
                   className={`dropdown-menu shadow border-0 py-2 ${requestOpen ? "show" : ""
                     }`}
                   style={{
-                    minWidth: "300px",
-                    borderRadius: "6px"
+                    minWidth: "280px",
+                    borderRadius: "10px"
                   }}
                 >
-                  {menus.map((menu) => (
-                    <li key={menu.to}>
-                      <Link
-                        className={`dropdown-item d-flex align-items-center gap-2 ${location.pathname === menu.to
-                          ? "active"
-                          : ""
-                          }`}
-                        to={menu.to}
-                        onClick={() => setRequestOpen(false)}
+                  {menus
+                    // .filter(
+                    //   menu =>
+                    //     !requestProcessingMenus.some(
+                    //       p => p.to === menu.to
+                    //     )
+                    // )
+                    .map(menu => (
+                      <li key={menu.to}>
+                        <Link
+                          className={`dropdown-item d-flex align-items-center gap-2 py-1 fs-6 ${location.pathname === menu.to ? "active" : ""
+                            }`}
+                          to={menu.to}
+                          onClick={() => setRequestOpen(false)}
+                        >
+                          {menu.icon}
+                          <span>{menu.label}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  {/* 
+                  <li
+                    onMouseEnter={() => setProcessingOpen(true)}
+                    onMouseLeave={() => setProcessingOpen(false)}
+                  >
+                    {user?.role === "BU" && (
+                      <div
+                        className="dropdown-item fw-bold text-muted fs-6"
+                        style={{ cursor: "pointer" }}
                       >
-                        {menu.icon}
-                        <span>{menu.label}</span>
-                      </Link>
-                    </li>
-                  ))}
+                        Request Actions
+                      </div>
+                    )}
+
+                    {user?.role === "BU" && //processingOpen &&
+                      requestProcessingMenus.map((menu) => (
+                        <Link
+                          key={menu.to}
+                          className={`dropdown-item d-flex align-items-center gap-2 ps-5 fs-6 ${location.pathname === menu.to ? "active" : ""
+                            }`}
+                          to={menu.to}
+                          onClick={() => setRequestOpen(false)}
+                        >
+                          {menu.icon}
+                          <span>{menu.label}</span>
+                        </Link>
+                      ))}
+                  </li> */}
                 </ul>
               </li>
-
               <li className="nav-item">
                 <Link
                   className={`nav-link ${location.pathname === "/report"
@@ -266,48 +313,79 @@ function Navbar({
                   Reports
                 </Link>
               </li>
-              <li className="nav-item">
-                <Link
-                  className={`nav-link ${location.pathname === "/file-handling"
-                    ? "active fw-semibold text-primary"
+
+              <li
+                className="nav-item dropdown position-relative"
+                onMouseEnter={() => setFileHandlingOpen(true)}
+                onMouseLeave={() => setFileHandlingOpen(false)}
+              >
+                <div
+                  className={`nav-link d-flex align-items-center ${fileHandlingOpen || isFileHandlingActive
+                    ? "text-primary fw-semibold"
                     : ""
                     }`}
-                  to="/file-handling"
+                  style={{ cursor: "pointer" }}
                 >
                   <FaFile className="me-1" />
-                  File Handling
-                </Link>
-              </li>
+                  <span>File Handling</span>
+                  <FaChevronDown
+                    className={`ms-2 ${fileHandlingOpen ? "rotate-arrow" : ""}`}
+                  />
+                </div>
 
-              {user?.role === "DCO" && (
-              <li className="nav-item">
-                <Link
-                  className={`nav-link ${location.pathname ===
-                    "/profile-management"
-                    ? "active fw-semibold text-primary"
-                    : ""
+                <ul
+                  className={`dropdown-menu shadow border-0 py-2 ${fileHandlingOpen ? "show" : ""
                     }`}
-                  to="/profile-management"
+                  style={{
+                    minWidth: "250px",
+                    borderRadius: "10px",
+                  }}
                 >
-                  <FaUsers className="me-2" />
-                  User Management
-                </Link>
+                  {fileHandlingMenus.map(menu => (
+                    <li key={menu.to}>
+                      <Link
+                        className={`dropdown-item py-2 ${location.pathname === menu.to ? "active" : ""
+                          }`}
+                        to={menu.to}
+                        onClick={() => setFileHandlingOpen(false)}
+                      >
+                        {menu.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               </li>
-              )}
-
             </ul>
-
+            <div className="d-flex align-items-center me-3">
+              <div className="app-toggle shadow-sm">
+                <button
+                  type="button"
+                  className={`app-toggle-pill ${!isMEA ? "active" : ""}`}
+                  onClick={() => { if (isMEA) handleApplicationSwitch(); }}
+                >
+                  MAT
+                </button>
+                <button
+                  type="button"
+                  className={`app-toggle-pill ${isMEA ? "active" : ""}`}
+                  onClick={() => { if (!isMEA) handleApplicationSwitch(); }}
+                >
+                  MEA
+                </button>
+              </div>
+            </div>
             <div
               className="position-relative"
               onMouseEnter={() => setProfileOpen(true)}
               onMouseLeave={() => setProfileOpen(false)}
             >
-
               <button
                 className="btn btn-light border d-flex align-items-center gap-2"
                 type="button"
               >
-                <FaUserCircle size={22} />
+                <div className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style={{ width: 30, height: 30 }}>
+                  <FaUser size={16} />
+                </div>
 
                 <span className="fw-normal">
                   {user?.username}
@@ -326,7 +404,6 @@ function Navbar({
                     borderRadius: "10px"
                   }}
                 >
-
                   <button
                     className="dropdown-item d-flex align-items-center gap-2"
                     onClick={() => {
@@ -338,8 +415,20 @@ function Navbar({
                     Profile Information
                   </button>
 
+                  {user?.role === "DCO" && (
+                    <Link
+                      className="dropdown-item d-flex align-items-center gap-2"
+                      to="/profile-management"
+                      onClick={() => setProfileOpen(false)}
+                    >
+                      <FaUsers />
+                      User Management
+                      {user?.isAdmin && (
+                        <span className="badge bg-primary ms-auto" style={{ fontSize: "10px" }}>Admin</span>
+                      )}
+                    </Link>
+                  )}
                   <hr className="dropdown-divider my-1" />
-
                   <button
                     className="dropdown-item text-danger d-flex align-items-center gap-2"
                     onClick={onLogout}
@@ -347,19 +436,13 @@ function Navbar({
                     <FaSignOutAlt />
                     Logout
                   </button>
-
                 </div>
               )}
-
             </div>
-
           </div>
-
         </div>
-
       </nav>
       {showProfileModal && (
-
         <div
           className="modal show d-block"
           style={{
@@ -368,15 +451,11 @@ function Navbar({
         >
 
           <div className="modal-dialog modal-dialog-centered">
-
             <div className="modal-content border-0 shadow">
-
               <div className="modal-header">
-
                 <h5 className="modal-title">
                   Profile Information
                 </h5>
-
                 <button
                   type="button"
                   className="btn-close"
@@ -384,26 +463,20 @@ function Navbar({
                     setShowProfileModal(false)
                   }
                 />
-
               </div>
 
               <div className="modal-body">
-
                 <div className="text-center mb-4">
-
                   <FaUserCircle
                     size={75}
                     className="text-primary"
                   />
-
                   <h5 className="mt-2 mb-0">
                     {user?.displayName || "-"}
                   </h5>
-
                 </div>
 
                 <div className="row g-3">
-
                   <div className="col-md-6">
                     <small className="text-muted d-block">
                       User ID
@@ -439,6 +512,9 @@ function Navbar({
                       <span className="badge bg-primary">
                         {user?.role || "-"}
                       </span>
+                      {user?.isAdmin && (
+                        <span className="badge bg-info text-dark ms-1">Admin</span>
+                      )}
                     </div>
                   </div>
 
@@ -468,7 +544,6 @@ function Navbar({
                       {user?.regionName || "-"}
                     </div>
                   </div>
-
                   <div className="col-md-6">
                     <small className="text-muted d-block">
                       Zone Name
@@ -477,34 +552,22 @@ function Navbar({
                       {user?.zoneName || "-"}
                     </div>
                   </div>
-
                 </div>
-
               </div>
-
               <div className="modal-footer">
-
-                <button
-                  className="btn btn-primary"
+                <button className="btn btn-primary"
                   onClick={() =>
                     setShowProfileModal(false)
                   }
                 >
                   Close
                 </button>
-
               </div>
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
     </div>
   );
 }
-
 export default Navbar;

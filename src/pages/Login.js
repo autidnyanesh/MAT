@@ -1,36 +1,93 @@
 import React, { useState, useEffect, useCallback } from "react";
+import "bootstrap/dist/css/bootstrap.min.css";
 import "../styles/login.css";
 import api, { setAccessToken } from "../api/axiosConfig";
 import { sanitizeInput } from "../utils/sanitize";
 import { aesEncrypt } from "../utils/aesUtil";
+import { FaEye, FaEyeSlash, FaSyncAlt, FaLock } from "react-icons/fa";
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Set REACT_APP_USE_MOCK_LOGIN=false once the backend /api/login and
+// /api/auth/captcha endpoints are ready. Defaults to mock mode (true) so
+// local frontend dev keeps working without a running backend.
+const USE_MOCK_LOGIN = process.env.REACT_APP_USE_MOCK_LOGIN !== "false";
+
+const DUMMY_USERS = [
+  { username: "BU001", password: "pass123", role: "BU", displayName: "BU User", email: "bu@sbi.co.in", sol: "1001", solName: "Mumbai Main", regionName: "West", zoneName: "Zone A" },
+  { username: "SOM001", password: "pass123", role: "SOM", displayName: "SOM User", email: "som@sbi.co.in", sol: "1002", solName: "Delhi Main", regionName: "North", zoneName: "Zone B" },
+  { username: "BH001", password: "pass123", role: "BH", displayName: "BH User", email: "bh@sbi.co.in", sol: "1003", solName: "Chennai Main", regionName: "South", zoneName: "Zone C" },
+  { username: "RH001", password: "pass123", role: "RH", displayName: "RH User", email: "rh@sbi.co.in", sol: "1004", solName: "Kolkata Main", regionName: "East", zoneName: "Zone D" },
+  { username: "DCO001", password: "pass123", role: "DCO", isAdmin: true, ein: "100001", displayName: "ABC Admin", email: "dco@sbi.co.in", sol: "1001", solName: "Pune Main", regionName: "West", zoneName: "Zone A" },
+  { username: "DCO002", password: "pass123", role: "DCO", isAdmin: true, ein: "100002", displayName: "XYZ Admin", email: "dco2@sbi.co.in", sol: "1002", solName: "Pune Main", regionName: "West", zoneName: "Zone A" },
+  { username: "DCO003", password: "pass123", role: "DCO", isAdmin: false, ein: "100003", displayName: "DCO User", email: "dco3@sbi.co.in", sol: "1005", solName: "Pune Main", regionName: "West", zoneName: "Zone A" },
+  { username: "DCOC001", password: "pass123", role: "DCOC", displayName: "DCO Checker", email: "dcoc@sbi.co.in", sol: "1005", solName: "Pune Main", regionName: "West", zoneName: "Zone A" },
+  { username: "AGM001", password: "pass123", role: "AGM", displayName: "AGM User", email: "agm@sbi.co.in", sol: "1006", solName: "Hyderabad", regionName: "South", zoneName: "Zone C" },
+  { username: "DGM001", password: "pass123", role: "DGM", displayName: "DGM User", email: "dgm@sbi.co.in", sol: "1007", solName: "Ahmedabad", regionName: "West", zoneName: "Zone A" },
+];
+
 function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [captcha, setCaptcha] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // ── Captcha state ──────────────────────────────────────────────────────
+  // MOCK MODE: `captchaAnswer` holds the plain-text answer generated and
+  //            checked entirely client-side. This is only ever safe for
+  //            local dev — the answer necessarily lives in state/DOM, so
+  //            it's readable via dev tools. Never treat this as a real
+  //            bot defense.
+  // REAL MODE: `captchaId` is an opaque token from the backend; the answer
+  //            never comes to the client at all. `captchaImage` is a
+  //            base64 image the backend renders server-side. The typed
+  //            answer is sent to the backend for validation as part of
+  //            /api/login — the frontend never checks it itself.
+  const [captchaAnswer, setCaptchaAnswer] = useState("");   // mock only
+  const [captchaId, setCaptchaId] = useState(null);         // real only
+  const [captchaImage, setCaptchaImage] = useState(null);   // real only
+  const [captchaLoadError, setCaptchaLoadError] = useState("");
   const [userCaptcha, setUserCaptcha] = useState("");
+
   const [error, setError] = useState("");
   const [pError, setPError] = useState("");
   const [uError, setUError] = useState("");
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loginType, setLoginType] = useState("MAT"); // Default MAT
 
-  const generateCaptcha = useCallback(() => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijklmnopqrstuvwxyz";
-    let cap = "";
-    for (let i = 0; i < 6; i++)
-      cap += chars.charAt(Math.floor(Math.random() * chars.length));
-    setCaptcha(cap);
+  // ── Get a fresh captcha ──────────────────────────────────────────────────
+  const refreshCaptcha = useCallback(async () => {
     setUserCaptcha("");
+    setCaptchaLoadError("");
+
+    if (USE_MOCK_LOGIN) {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijklmnopqrstuvwxyz";
+      let cap = "";
+      for (let i = 0; i < 6; i++) cap += chars.charAt(Math.floor(Math.random() * chars.length));
+      setCaptchaAnswer(cap);
+      return;
+    }
+
+    // Real backend: GET /api/auth/captcha -> { captchaId, imageBase64 }
+    // The server renders the characters into an image and keeps the
+    // answer tied to captchaId server-side (session/cache) — it's never
+    // sent to the client in any form.
+    try {
+      const res = await api.get("/api/auth/captcha");
+      setCaptchaId(res.data?.captchaId || null);
+      setCaptchaImage(res.data?.imageBase64 || null);
+    } catch {
+      setCaptchaId(null);
+      setCaptchaImage(null);
+      setCaptchaLoadError("Unable to load captcha. Click refresh to retry.");
+    }
   }, []);
 
   useEffect(() => {
-    generateCaptcha();
-  }, [generateCaptcha]);
+    refreshCaptcha();
+  }, [refreshCaptcha]);
 
   // Unlock account once lockout period expires
   useEffect(() => {
@@ -40,17 +97,17 @@ function Login({ onLogin }) {
       setLockedUntil(null);
       setAttempts(0);
       setError("");
-      generateCaptcha();
+      refreshCaptcha();
       return;
     }
     const timer = setTimeout(() => {
       setLockedUntil(null);
       setAttempts(0);
       setError("");
-      generateCaptcha();
+      refreshCaptcha();
     }, remaining);
     return () => clearTimeout(timer);
-  }, [lockedUntil, generateCaptcha]);
+  }, [lockedUntil, refreshCaptcha]);
 
   const isLocked = lockedUntil && Date.now() < lockedUntil;
 
@@ -58,18 +115,16 @@ function Login({ onLogin }) {
     ? Math.ceil((lockedUntil - Date.now()) / 1000)
     : 0;
 
-  const recordFailedAttempt = (currentAttempts) => {
+  const recordFailedAttempt = (currentAttempts, message) => {
     const next = currentAttempts + 1;
     setAttempts(next);
     if (next >= MAX_ATTEMPTS) {
       setLockedUntil(Date.now() + LOCKOUT_MS);
       setError("Too many failed attempts. Account locked for 5 minutes.");
     } else {
-      setError(
-        `Invalid credentials. ${MAX_ATTEMPTS - next} attempt(s) remaining.`
-      );
+      setError(message || `Invalid credentials. ${MAX_ATTEMPTS - next} attempt(s) remaining.`);
     }
-    generateCaptcha();
+    refreshCaptcha();
   };
 
   const handleLogin = async () => {
@@ -78,85 +133,96 @@ function Login({ onLogin }) {
     const cleanUsername = sanitizeInput(username);
     const cleanCaptcha = sanitizeInput(userCaptcha);
 
-    if (!cleanUsername) {
-      setUError("Please enter User ID");
-      return;
-    }
+    if (!cleanUsername) { setUError("Please enter your Username (EIN)"); return; }
     setUError("");
 
-    if (!password) {
-      setPError("Please enter Password");
-      return;
-    }
+    if (!password) { setPError("Please enter Password"); return; }
     setPError("");
 
-    if (cleanCaptcha !== captcha) {
-      setError("Invalid captcha. Please try again.");
-      generateCaptcha();
+    if (!cleanCaptcha) {
+      setError("Please enter the captcha");
       return;
     }
     setError("");
 
-    // ── DUMMY LOGIN (remove before production) ─────────────────
-    const DUMMY_USERS = [
-      { username: "BU001", password: "pass123", role: "BU", displayName: "BU User", email: "bu@sbi.co.in", sol: "1001", solName: "Mumbai Main", regionName: "West", zoneName: "Zone A" },
-      { username: "SOM001", password: "pass123", role: "SOM", displayName: "SOM User", email: "som@sbi.co.in", sol: "1002", solName: "Delhi Main", regionName: "North", zoneName: "Zone B" },
-      { username: "BH001", password: "pass123", role: "BH", displayName: "BH User", email: "bh@sbi.co.in", sol: "1003", solName: "Chennai Main", regionName: "South", zoneName: "Zone C" },
-      { username: "RH001", password: "pass123", role: "RH", displayName: "RH User", email: "rh@sbi.co.in", sol: "1004", solName: "Kolkata Main", regionName: "East", zoneName: "Zone D" },
-      { username: "DCO001", password: "pass123", role: "DCO", displayName: "DCO User", email: "dco@sbi.co.in", sol: "1005", solName: "Pune Main", regionName: "West", zoneName: "Zone A" },
-      { username: "AGM001", password: "pass123", role: "AGM", displayName: "AGM User", email: "agm@sbi.co.in", sol: "1006", solName: "Hyderabad", regionName: "South", zoneName: "Zone C" },
-      { username: "DGM001", password: "pass123", role: "DGM", displayName: "DGM User", email: "dgm@sbi.co.in", sol: "1007", solName: "Ahmedabad", regionName: "West", zoneName: "Zone A" },
-    ];
+    if (USE_MOCK_LOGIN) {
+      // Mock mode validates the captcha locally, since there's no backend
+      // to check it against.
+      if (cleanCaptcha !== captchaAnswer) {
+        setError("Invalid captcha. Please try again.");
+        refreshCaptcha();
+        return;
+      }
 
-    const matched = DUMMY_USERS.find(
-      (u) => u.username === cleanUsername && u.password === password
-    );
+      const matched = DUMMY_USERS.find(
+        (u) => u.username === cleanUsername && u.password === password
+      );
 
-    if (matched) {
-      setAttempts(0);
-      // DUMMY: simulate access token storage
-      setAccessToken("dummy-access-token-" + matched.role);
-      onLogin({
-        username: matched.username,
-        displayName: matched.displayName,
-        email: matched.email,
-        role: matched.role,
-        sol: matched.sol,
-        solName: matched.solName,
-        regionName: matched.regionName,
-        zoneName: matched.zoneName,
-      });
+      if (matched) {
+        setAttempts(0);
+        setAccessToken("dummy-access-token-" + matched.role);
+        onLogin({
+          username: matched.username,
+          ein: matched.ein || matched.username,
+          displayName: matched.displayName,
+          email: matched.email,
+          role: matched.role,
+          isAdmin: Boolean(matched.isAdmin),
+          sol: matched.sol,
+          solName: matched.solName,
+          regionName: matched.regionName,
+          zoneName: matched.zoneName,
+        });
+      } else {
+        recordFailedAttempt(attempts);
+      }
       return;
     }
 
-    recordFailedAttempt(attempts);
-    // ── END DUMMY LOGIN ──────────────────────────────────────────
+    // Real backend login. Captcha is validated server-side against
+    // captchaId — the frontend never sees or checks the expected answer.
+    // Password is AES-encrypted client-side to match the backend's
+    // expected payload shape — see utils/aesUtil.js for why this is
+    // defense-in-depth on top of HTTPS, not a replacement for it.
+    setLoading(true);
+    try {
+      const encrypted = aesEncrypt(password);
 
-    // ── REAL API LOGIN (uncomment when backend is ready) ─────────
-    // setLoading(true);
-    // try {
-    //   const encrypted = aesEncrypt(password); // uses MATSECRETKEY2026 internally
-    //
-    //   const response = await api.post("/api/login", {
-    //     username: cleanUsername,
-    //     password: encrypted.ciphertext,  // Base64 AES-128-CBC encrypted password
-    //     salt:     encrypted.salt,        // Hex — backend: decrypt(salt, iv, passphrase, ciphertext)
-    //     iv:       encrypted.iv,          // Hex
-    //   });
-    //
-    //   if (response.status === 200 && response.data) {
-    //     setAttempts(0);
-    //     setAccessToken(response.data.accessToken);  // store in memory only
-    //     onLogin({ ...response.data, username: response.data.username || cleanUsername });
-    //   } else {
-    //     recordFailedAttempt(attempts);
-    //   }
-    // } catch {
-    //   recordFailedAttempt(attempts);
-    // } finally {
-    //   setLoading(false);
-    // }
-    // ── END REAL API LOGIN ────────────────────────────────────────
+      const response = await api.post("/api/login", {
+        username: cleanUsername,
+        password: encrypted.ciphertext,
+        salt: encrypted.salt,
+        iv: encrypted.iv,
+        captchaId,
+        captchaInput: cleanCaptcha,
+      });
+
+      if (response.status === 200 && response.data?.accessToken) {
+        setAttempts(0);
+        setAccessToken(response.data.accessToken); // memory only, never persisted
+        onLogin({ ...response.data, username: response.data.username || cleanUsername });
+        return;
+      }
+
+      recordFailedAttempt(attempts);
+    } catch (err) {
+      // Backend is expected to return a specific code for a bad captcha
+      // vs bad credentials — adjust this mapping to match your API once
+      // it's live. Deliberately generic message otherwise, so a failed
+      // login doesn't reveal which part (captcha vs credentials) was wrong.
+      const code = err.response?.data?.errorCode;
+      if (code === "ACCOUNT_LOCKED") {
+        setLockedUntil(Date.now() + LOCKOUT_MS);
+        setError("Too many failed attempts. Account locked for 5 minutes.");
+        refreshCaptcha();
+      } else if (code === "INVALID_CAPTCHA") {
+        recordFailedAttempt(attempts, "Invalid captcha. Please try again.");
+      } else {
+        recordFailedAttempt(attempts);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleKey = (e) => {
@@ -165,25 +231,105 @@ function Login({ onLogin }) {
 
   return (
     <div className="auth-page">
-      <div className="auth-card">
+      <div className="auth-card shadow-lg">
 
-        {/* RIGHT — Image panel */}
-        <div className="auth-image-side">
-          <div className="auth-image-overlay">
-            <h3>Merchant Tool</h3>
+        {/* LEFT — signature graphic panel (hidden on small screens) */}
+        <div className="auth-graphic-panel d-none d-md-flex flex-column justify-content-between">
+          <svg className="auth-graphic-svg" viewBox="0 0 400 460" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <line className="edge" x1="200" y1="230" x2="80" y2="90" />
+            <line className="edge" x1="200" y1="230" x2="320" y2="80" />
+            <line className="edge" x1="200" y1="230" x2="60" y2="300" />
+            <line className="edge" x1="200" y1="230" x2="330" y2="330" />
+            <line className="edge" x1="200" y1="230" x2="150" y2="400" />
+            <line className="edge" x1="200" y1="230" x2="270" y2="410" />
+            <path className="pulse" d="M60,300 L200,230" />
+            <circle className="node" cx="80" cy="90" r="5" />
+            <circle className="node" cx="320" cy="80" r="5" />
+            <circle className="node" cx="60" cy="300" r="5" />
+            <circle className="node" cx="330" cy="330" r="5" />
+            <circle className="node" cx="150" cy="400" r="5" />
+            <circle className="node" cx="270" cy="410" r="5" />
+            <circle className="node hub" cx="200" cy="230" r="9" />
+          </svg>
+
+          <div className="d-flex align-items-center gap-2 position-relative">
+            {/* <div className="brand-chip"></div> */}
+            <span className="brand-word">Merchant Terminal</span><br />
           </div>
+
+          <p className="graphic-caption position-relative mb-0">
+            {/* <strong>One network, one approval trail.</strong><br /> */}
+            <div className="auth-sub-lg">IDBI Bank</div>
+            Every branch request routes through maker-checker review before it takes effect.
+          </p>
         </div>
 
-        {/* LEFT — Form */}
-        <div className="auth-form-side">
-          <h3 className="auth-heading">Welcome back</h3>
-          <p className="auth-sub">Sign in to your account to continue</p>
+        {/* RIGHT — form */}
+        <div className="auth-form-panel">
 
-          <div className="auth-field">
-            <label>User ID</label>
+          {/* <div className="d-flex align-items-center gap-2 mb-4">
+            <div className="brand-chip-sm">MAT</div>
+            <span className="auth-sub-lg">IDBI Bank</span>
+          </div> */}
+
+          <h1 className="auth-heading">Welcome back</h1>
+          <p className="auth-sub mb-3">Sign in to your account to continue</p>
+
+          <div className="mb-3">
+            <label className="form-label">Login Type</label>
+
+            <div className="d-flex gap-3">
+
+              {/* MAT */}
+              <div
+                className={`card ${loginType === "MAT"
+                  ? "border-primary bg-primary-subtle shadow-sm"
+                  : ""
+                  }`}
+                style={{
+                  cursor: "pointer",
+                  width: "95px",
+                  height: "40px",
+                  transition: "0.2s"
+                }}
+                onClick={() => setLoginType("MAT")}
+              >
+                <div className="card-body py-2 text-center">
+                  <div>MAT</div>
+                  {/* <small className="text-small">Merchant</small> */}
+                </div>
+              </div>
+
+              {/* MEA */}
+              <div
+                className={`card ${loginType === "MEA"
+                  ? "border-primary bg-primary-subtle shadow-sm"
+                  : ""
+                  }`}
+                style={{
+                  cursor: "pointer",
+                  width: "95px",
+                  height: "40px",
+                  transition: "0.2s"
+                }}
+                onClick={() => setLoginType("MEA")}
+              >
+                <div className="card-body py-2 text-center">
+                  <div>MEA</div>
+                  {/* <small className="text-small">Merchant</small> */}
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <label htmlFor="username" className="form-label">Username (EIN)</label>
             <input
+              id="username"
               type="text"
-              placeholder="Enter your User ID"
+              className="form-control auth-input"
+              placeholder="Enter your Username (EIN)"
               value={username}
               maxLength={20}
               autoComplete="username"
@@ -191,40 +337,67 @@ function Login({ onLogin }) {
               onKeyDown={handleKey}
               disabled={!!isLocked}
             />
+            {uError && <div className="text-danger small mt-1">{uError}</div>}
           </div>
-          {uError && <p className="auth-error">{uError}</p>}
 
-          <div className="auth-field">
-            <label>Password</label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              maxLength={50}
-              autoComplete="current-password"
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={handleKey}
-              disabled={!!isLocked}
-            />
-          </div>
-          {pError && <p className="auth-error">{pError}</p>}
-
-          <div className="auth-field">
-            <label>Captcha</label>
-            <div className="captcha-row">
-              <div className="captcha-display">{captcha}</div>
+          <div className="mb-2">
+            <label htmlFor="password" className="form-label">Password</label>
+            <div className="input-group gap-2">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                className="form-control auth-input"
+                placeholder="Enter your password"
+                value={password}
+                maxLength={50}
+                autoComplete="current-password"
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={handleKey}
+                disabled={!!isLocked}
+              />
               <button
                 type="button"
-                className="captcha-refresh"
-                onClick={generateCaptcha}
+                className="btn btn-outline-secondary auth-pw-toggle"
+                onClick={() => setShowPassword((p) => !p)}
+                disabled={!!isLocked}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </button>
+            </div>
+            {pError && <div className="text-danger small mt-1">{pError}</div>}
+          </div>
+
+          <div className="mb-2">
+            <label className="form-label">Captcha</label>
+            <div className="d-flex gap-2 mb-2">
+              <div className="auth-captcha-display flex-grow-1">
+                {USE_MOCK_LOGIN ? (
+                  captchaAnswer
+                ) : captchaImage ? (
+                  <img
+                    src={`data:image/png;base64,${captchaImage}`}
+                    alt="Captcha"
+                    className="auth-captcha-image"
+                  />
+                ) : (
+                  <span className="text-muted small">{captchaLoadError || "Loading…"}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline-secondary auth-captcha-refresh"
+                onClick={refreshCaptcha}
                 title="Refresh captcha"
+                aria-label="Refresh captcha"
                 disabled={!!isLocked}
               >
-                ↻
+                <FaSyncAlt />
               </button>
             </div>
             <input
               type="text"
+              className="form-control auth-input"
               placeholder="Enter captcha above"
               value={userCaptcha}
               maxLength={10}
@@ -236,37 +409,36 @@ function Login({ onLogin }) {
           </div>
 
           {error && (
-            <p className="auth-error">
-              {isLocked
-                ? `Account locked. Try again in ${remainingLockSecs}s.`
-                : error}
-            </p>
+            <div className="alert alert-danger py-2 small mb-3">
+              {isLocked ? `Account locked. Try again in ${remainingLockSecs}s.` : error}
+            </div>
           )}
 
           <button
-            className="auth-btn"
+            className="btn auth-btn-signin w-100"
             onClick={handleLogin}
             disabled={!!isLocked || loading}
           >
-            {loading ? "Signing in..." : "SIGN IN"}
+            {loading ? "Signing in..." : "Sign in"}
           </button>
 
-          {/* REMOVE before production */}
-          <div
-            style={{
-              marginTop: "14px",
-              padding: "10px 12px",
-              background: "#fffbe6",
-              border: "1px solid #ffe58f",
-              borderRadius: "6px",
-              fontSize: "12px",
-              color: "#7c5e00",
-              lineHeight: "1.7"
-            }}
-          >
-            <strong>🧪 Test Accounts</strong> (password: <code>pass123</code>)<br />
-            BU001 · SOM001 · BH001 · RH001 · DCO001 · AGM001 · DGM001
+          <div className="auth-secured">
+            <FaLock size={11} className="me-1" />
+            Secured session
           </div>
+          {/* 
+          {USE_MOCK_LOGIN && (
+            <div className="auth-mock-note mt-3">
+              <strong>Test accounts</strong> (mock login — password: <code>pass123</code>)
+              <br />
+              BU001 · DCO001 · DCOC001
+              <br />
+              <span className="text-muted">
+                Set REACT_APP_USE_MOCK_LOGIN=false to use the real backend (also switches captcha to server-validated mode).
+              </span>
+            </div>
+          )} */}
+
         </div>
 
       </div>

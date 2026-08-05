@@ -1,28 +1,34 @@
-import React, { useRef, useState } from "react";
+﻿import React, { useState } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { FaSearch, FaSpinner } from "react-icons/fa";
+import { FaSearch, FaSpinner, FaFileAlt } from "react-icons/fa";
 import AlertModal from "../../components/AlertModel";
 import api from "../../api/axiosConfig";
-import { sanitizeInput, maskAccountNumber, validateFile } from "../../utils/sanitize";
+import { sanitizeInput, validateFile, maskCardNumber, validateCardReference } from "../../utils/sanitize";
+import "../../styles/main.css";
 
 const RaisedRequest = () => {
     const [txnType, setTxnType] = useState("UPI");
-    const [formData, setFormData] = useState({});
-    const [errors, setErrors] = useState({});
-    const [fetchingCust, setFetchingCust] = useState(false);
-    const [fetchCustError, setFetchCustError] = useState("");
-    const [fetchAccError] = useState("");
-    const [showModal, setShowModal] = useState(false);
-    const [custResults, setCustResults] = useState([]);
-    const [fetchingMid, setFetchingMid] = useState(false);
-    const [midStatus, setMidStatus] = useState("");
-    const [fetchingRrn, setFetchingRrn] = useState(false);
-    const [rrnStatus, setRrnStatus] = useState("");
-    const [rrnError, setRrnError] = useState("");
-    const [CustStatus, setCustStatus] = useState("");
-    const [midError, setMidError] = useState("");
-    const fileRef = useRef(null);
+    const [searchData, setSearchData] = useState({
+        custId: "",
+        accountNo: "",
+        rrn: "",
+        mid: "",
+        dateTxn: ""
+    });
+    const [searchErrors, setSearchErrors] = useState({});
+    const [searching, setSearching] = useState(false);
+    const [transactionFound, setTransactionFound] = useState(false);
+    const [transactionDetails, setTransactionDetails] = useState(null);
+    const [showSearchPanel, setShowSearchPanel] = useState(true);
+    const [tidInput, setTidInput] = useState("");
+    const [tidError, setTidError] = useState("");
+    const [tidValid, setTidValid] = useState(false);
+    const [validatingTid, setValidatingTid] = useState(false);
 
+    const [refundData, setRefundData] = useState({ refundAmt: "", uDocument: null });
+    const [refundErrors, setRefundErrors] = useState({});
+    const [submitting, setSubmitting] = useState(false);
+    const [cardValidationError, setCardValidationError] = useState("");
 
     const [alertConfig, setAlertConfig] = useState({
         show: false,
@@ -31,703 +37,731 @@ const RaisedRequest = () => {
         type: "success"
     });
 
+    const tempData = {
+        custId: "CUST001",
+        accountNo: "123456789012",
+        sol: "001",
+        rrn: "987654321098",
+        tranAmount: 1500.5,
+        mid: "MID123",
+        tid: "TID456",
+        gateTxnId: "GATE789",
+        merchantVPA: "merchant@upi",
+        cardNumber: "4111 1111 1111 1111",
+        authCode: "AUTH123",
+        scheme: "VISA",
+        dateTxn: "14-07-2026",
+        entryUser: "Admin",
+        uEmail: "user@example.com"
+    };
 
-    const handleChange = (e) => {
+    const handleSearchChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: sanitizeInput(value) }));
+        setSearchData(prev => ({ ...prev, [name]: sanitizeInput(value) }));
+    };
 
-        if (name === "custId") {
-            setCustStatus("");
-            setFetchCustError("");
-            setFetchingCust(false);
-            setCustResults([]);
-        }
-        if (name === "mid") {
-            setMidStatus("");
-            setMidError("");
-        }
-        if (name === "rrn") {
-            setRrnStatus("");
-            setRrnError("");
+    const handleRefundChange = (e) => {
+        const { name, value, files } = e.target;
+        if (name === "uDocument") {
+            setRefundData(prev => ({ ...prev, uDocument: files?.[0] || null }));
+        } else {
+            setRefundData(prev => ({ ...prev, [name]: sanitizeInput(value) }));
         }
     };
 
-    const validate = () => {
-        const newErrors = {};
-        if (!formData.custId?.trim())
-            newErrors.custId = "Customer ID is required";
-        if (CustStatus !== "Valid")
-            newErrors.custId =
-                "Please validate Customer ID";
-        if (!formData.accountNo)
-            newErrors.accountNo =
-                "Account Number is required";
-        if (!formData.mid?.trim())
-            newErrors.mid =
-                "MID is required";
-        if (midStatus !== "valid")
-            newErrors.mid =
-                "Please validate MID";
-        if (!formData.rrn?.trim())
-            newErrors.rrn =
-                "RRN is required";
-        if (rrnStatus !== "valid")
-            newErrors.rrn =
-                "Please validate RRN";
-        if (!formData.dateTxn)
-            newErrors.dateTxn =
-                "Transaction Date is required";
-        if (
-            formData.dateTxn &&
-            new Date(formData.dateTxn) >
-            new Date()
-        ) {
-            newErrors.dateTxn =
-                "Future transaction date is not allowed";
-        }
-        if (
-            Number(formData.refundAmt) <= 0
-        ) {
-            newErrors.refundAmt =
-                "Refund Amount must be greater than zero";
-        }
-        if (!formData.refundAmt)
-            newErrors.refundAmt =
-                "Refund Amount is required";
-        if (
-            Number(formData.refundAmt) >
-            Number(formData.tranAmount)
-        ) {
-            newErrors.refundAmt =
-                "Refund Amount cannot exceed Transaction Amount";
-        }
+    const today = new Date().toISOString().split("T")[0];
 
-        const fileError = validateFile(fileRef.current?.files?.[0]);
-        if (fileError) newErrors.uDocument = fileError;
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+    const validateSearch = () => {
+        const errors = {};
+        if (!searchData.custId.trim()) errors.custId = "Customer ID is required";
+        if (!searchData.accountNo.trim()) errors.accountNo = "Account Number is required";
+        if (!searchData.rrn.trim()) errors.rrn = "RRN is required";
+        if (!searchData.mid.trim()) errors.mid = "MID is required";
+        if (!searchData.dateTxn) errors.dateTxn = "Transaction Date is required";
+        if (searchData.dateTxn && new Date(searchData.dateTxn) > new Date(today)) {
+            errors.dateTxn = "Future transaction date is not allowed";
+        }
+        setSearchErrors(errors);
+        return Object.keys(errors).length === 0;
     };
 
-    const handleSubmit = async (e) => {
-
+    const handleSearch = async (e) => {
         e.preventDefault();
+        if (!validateSearch()) return;
 
-        if (!validate())
-            return;
+        setSearching(true);
+        setTransactionFound(false);
+        setTransactionDetails(null);
+        setCardValidationError("");
+
         try {
-            await api.post(
-                "/api/refund/submit",
-                formData
-            );
+            // const response = await api.post("/api/refund/searchTransaction", {
+            //     txnType,
+            //     ...searchData
+            // });
+            const searchedTransaction = {
+                ...tempData,
+                cardReference: `rrn-${searchData.rrn}|${searchData.dateTxn}|${tempData.tranAmount.toFixed(2)}`,
+                maskedCardNumber: maskCardNumber(tempData.cardNumber)
+            };
+            setTransactionDetails(searchedTransaction);
+            setTransactionFound(true);
+            setShowSearchPanel(false);
+            setAlertConfig({
+                show: true,
+                title: "Transaction Found",
+                message: "Transaction details have been loaded successfully.",
+                type: "success"
+            });
+        } catch (error) {
+            setAlertConfig({
+                show: true,
+                title: "Search Failed",
+                message: "Unable to find transaction. Please verify the inputs and try again.",
+                type: "error"
+            });
+        } finally {
+            setSearching(false);
+        }
+    };
+
+    const maxRefundableAmount = transactionDetails?.tranAmount != null
+        ? Number(transactionDetails.tranAmount)
+        : 0;
+
+    const remainingRefundableAmount = Math.max(
+        maxRefundableAmount - (Number(refundData.refundAmt) || 0),
+        0
+    );
+
+    const validateRefund = () => {
+        const errors = {};
+        if (!refundData.refundAmt.trim()) errors.refundAmt = "Refund Amount is required";
+        if (refundData.refundAmt && Number(refundData.refundAmt) <= 0) {
+            errors.refundAmt = "Refund Amount must be greater than zero";
+        }
+        if (refundData.refundAmt && Number(refundData.refundAmt) > maxRefundableAmount) {
+            errors.refundAmt = `Refund Amount cannot exceed maximum refundable amount of ₹ ${maxRefundableAmount.toLocaleString()}`;
+        }
+        if (!refundData.uDocument) {
+            errors.uDocument = "Reference document is required";
+        } else {
+            const fileError = validateFile(refundData.uDocument);
+            if (fileError) errors.uDocument = fileError;
+        }
+        setRefundErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
+    const handleTidFetch = async () => {
+        setTidError("");
+        if (!tidInput.trim()) {
+            setTidError("TID is required to validate.");
+            setTidValid(false);
+            return;
+        }
+
+        setValidatingTid(true);
+        try {
+            const response = await api.post("/api/refund/validateTid", {
+                txnType,
+                rrn: searchData.rrn,
+                mid: searchData.mid,
+                dateTxn: searchData.dateTxn,
+                tid: tidInput
+            });
+
+            if (response.data?.valid) {
+                setTidValid(true);
+                setTransactionDetails(prev => ({ ...prev, tid: tidInput }));
+                setAlertConfig({
+                    show: true,
+                    title: "TID Validated",
+                    message: "TID has been validated successfully.",
+                    type: "success"
+                });
+            } else {
+                setTidValid(false);
+                setTidError(response.data?.message || "TID validation failed.");
+            }
+        } catch (error) {
+            setTidValid(false);
+            setTidError("Unable to validate TID. Please try again.");
+        } finally {
+            setValidatingTid(false);
+        }
+    };
+
+    const handleEditSearch = () => {
+        setShowSearchPanel(true);
+        setTransactionFound(false);
+        setTransactionDetails(null);
+        setTidInput("");
+        setTidValid(false);
+        setTidError("");
+    };
+
+    const extractRequestId = (responseData) => {
+        if (!responseData || typeof responseData !== "object") return null;
+
+        const nestedData = responseData.data && typeof responseData.data === "object" ? responseData.data : null;
+        const requestIdCandidates = [
+            responseData.requestId,
+            responseData.request_id,
+            responseData.RequestId,
+            responseData.requestid,
+            responseData.id,
+            nestedData?.requestId,
+            nestedData?.request_id,
+            nestedData?.RequestId,
+            nestedData?.requestid,
+            nestedData?.id,
+        ];
+
+        return requestIdCandidates.find((value) => value != null && String(value).trim() !== "") || null;
+    };
+
+    const handleRefundSubmit = async (e) => {
+        e.preventDefault();
+        if (!transactionFound || !transactionDetails) {
+            setAlertConfig({
+                show: true,
+                title: "No Transaction Selected",
+                message: "Please search and load a transaction before submitting the refund request.",
+                type: "error"
+            });
+            return;
+        }
+        if (!validateRefund()) return;
+
+        const isCardMatchValid = txnType === "CARD"
+            ? validateCardReference(
+                transactionDetails.cardReference,
+                searchData.rrn,
+                searchData.dateTxn,
+                transactionDetails.tranAmount
+            )
+            : true;
+
+        if (!isCardMatchValid) {
+            setCardValidationError("Card reference does not match the transaction record. Please verify RRN, transaction date, and amount.");
+            setAlertConfig({
+                show: true,
+                title: "Card Validation Failed",
+                message: "Card reference does not match the transaction record.",
+                type: "error"
+            });
+            return;
+        }
+
+        setCardValidationError("");
+        setSubmitting(true);
+        const formPayload = new FormData();
+        formPayload.append("txnType", txnType);
+        formPayload.append("custId", searchData.custId);
+        formPayload.append("accountNo", searchData.accountNo);
+        formPayload.append("rrn", searchData.rrn);
+        formPayload.append("mid", searchData.mid);
+        formPayload.append("dateTxn", searchData.dateTxn);
+        formPayload.append("refundAmt", refundData.refundAmt);
+        formPayload.append("tid", tidInput);
+        formPayload.append("cardReference", transactionDetails.cardReference || "");
+        formPayload.append("maskedCardNumber", transactionDetails.maskedCardNumber || "");
+        if (refundData.uDocument) {
+            formPayload.append("uDocument", refundData.uDocument);
+        }
+
+        try {
+            const response = await api.post("/api/refund/submitRequest", formPayload);
+            const requestId = extractRequestId(response?.data || {});
+            const successMessage = requestId
+                ? `Request submitted successfully. Request ID: ${requestId}`
+                : response?.data?.message || "Request captured and sent for further processing.";
+
             setAlertConfig({
                 show: true,
                 title: "Request Submitted",
-                message:
-                    "<Request ID> captured and sent for further processing.",
+                message: successMessage,
                 type: "success"
             });
-        } catch {
+        } catch (error) {
+            const backendMessage = error?.response?.data?.message || error?.response?.data?.error || "Unable to submit refund request. Please try again.";
             setAlertConfig({
                 show: true,
                 title: "Submission Failed",
-                message:
-                    "Unable to submit request.",
+                message: backendMessage,
                 type: "error"
             });
-        }
-    };
-    // For fetching customer details 
-    const fetchCustomerDetails = async () => {
-        if (!formData.custId?.trim()) {
-            setFetchCustError("Customer ID is required.");
-            return;
-        }
-        setFetchingCust(true);
-        setFetchCustError("");
-        try {
-            const response = await api.get(
-                `/api/fetchCustDetails/${sanitizeInput(formData.custId.trim())}`
-            );
-            const data = response.data;
-            if (!data || data.length === 0) {
-                setFetchCustError("The entered Cust ID is not available in CBS, please re-check the entered value.");
-                setCustResults([]);
-                setCustStatus("Invalid");
-            } else {
-                setCustStatus("Valid");
-                setCustResults(data);   // store all results
-                setShowModal(true);     // open modal
-            }
-        } catch (e) {
-            setFetchCustError("Error fetching customer details");
-            setCustStatus("Invalid");
         } finally {
-            setFetchingCust(false);
+            setSubmitting(false);
         }
     };
 
-    // For MID validation, we can have a separate function that gets triggered when MID field loses focus (onBlur event) or when a "Validate" button next to the MID field is clicked. This function will call an API to validate the MID and update the UI based on the response.
-    const validateMid = async () => {
-        if (!formData.mid?.trim()) {
-            setMidError("MID is required");
-            return;
-        }
-        setFetchingMid(true);
-        setMidError("");
-        setMidStatus("");
-        try {
-            const response = await api.get(
-                `/api/merchant/${sanitizeInput(formData.mid)}`
-            );
-            if (response.data) {
-                setMidStatus("valid");
-                setFormData(prev => ({
-                    ...prev,
-                    tid: response.data.tid
-                }));
-            } else {
-                setMidStatus("invalid");
-            }
-        } catch (error) {
-            setMidStatus("invalid");
-            setMidError("MID not found");
-        } finally {
-            setFetchingMid(false);
-        }
-    };
+    const renderDetail = (label, value) => (
+        <div className="col-md-4 mb-3" key={label}>
+            <div className="border rounded-3 p-3 bg-white h-100">
+                <div className="text-muted small mb-1">{label}</div>
+                <div className="fw-semibold">{value || "-"}</div>
+            </div>
+        </div>
+    );
 
-    // To Rset all fields 
-    const handleReset = () => {
-        setFormData({});
-        setErrors({});
-        setFetchCustError("");
-        setMidError("");
-        setMidStatus("");
-        setCustResults([]);
-        setShowModal(false);
-        setTxnType("UPI");
-        setCustStatus("");
-        setRrnStatus("");
-        setRrnError("");
-        if (fileRef.current) {
-            fileRef.current.value = "";
-        }
-    };
-
-    const validateRRN = async () => {
-
-        if (!formData.rrn?.trim()) {
-            setRrnError("RRN is required");
-            return;
-        }
-
-        setFetchingRrn(true);
-        setRrnError("");
-
-        try {
-            const response = await api.get(
-                `/api/validateRrn/${sanitizeInput(formData.rrn)}`
-            );
-            if (response.data) {
-                setRrnStatus("valid");
-
-
-                if (
-                    formData.mid &&
-                    formData.rrn &&
-                    formData.dateTxn
-                ) {
-                    fetchTransactionDetails();
-                }
-            } else {
-                setRrnStatus("invalid");
-                setRrnError("RRN not found");
-            }
-        } catch {
-            setRrnStatus("invalid");
-            setRrnError("Invalid RRN");
-        } finally {
-            setFetchingRrn(false);
-        }
-    };
-
-    const fetchTransactionDetails = async () => {
-        try {
-            const response = await api.post(
-                "/api/transaction/validate",
-                {
-                    mid: formData.mid,
-                    rrn: formData.rrn,
-                    dateTxn: formData.dateTxn,
-                    txnType
-                }
-            );
-            setFormData(prev => ({
-                ...prev,
-                ...response.data
-            }));
-
-        } catch {
-            setAlertConfig({
-                show: true,
-                title: "Validation Failed",
-                message:
-                    "Transaction details not found.",
-                type: "error"
-            });
-        }
-    };
     return (
-        <div className="container-fluid p-2">
-            {/* <h6 className="text-primary mb-1">Request Handling >> Raised Request</h6> */}
-            <nav aria-label="breadcrumb">
-                <ol className="breadcrumb mb-0">
+        <div className="container-fluid p-2 raised-request-body">
+            {/* <style>{`
+                .raised-request-body label,
+                .raised-request-body .form-control,
+                .raised-request-body .input-group-text,
+                .raised-request-body .form-label {
+                    font-size: 14px !important;
+                }
+                .raised-request-body .fetch-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .raised-request-body .input-group-sm .form-control,
+                .raised-request-body .form-control-sm {
+                    padding: .25rem .5rem;
+                    height: calc(1.5em + .5rem);
+                    font-size: 1rem !important;
+                }
+                .raised-request-body .btn-sm {
+                    font-size: 14px;
+                    padding: .25rem .5rem;
+                }
+            `}</style> */}
+            <nav aria-label="breadcrumb" className="mb-3">
+                <ol className="breadcrumb small">
                     <li className="breadcrumb-item">
                         Request Handling
                     </li>
-                    <li className="breadcrumb-item active">
+                    <li
+                        className="breadcrumb-item active fw-semibold text-primary"
+                        aria-current="page"
+                    >
                         Raised Request
                     </li>
                 </ol>
             </nav>
             <hr style={{ marginTop: "2px" }} />
-            <form onSubmit={handleSubmit}>
-                {/* Customer Details */}
-                <div className="card shadow-sm border-0 mb-2">
+
+            {showSearchPanel && (
+                <div className="card shadow border-0 mb-4 p-4">
                     <div className="card-body">
-                        <div className="row align-items-center">
-                            <div className="col-md-2">
-                                <label className="form-label mb-0">
-                                    Transaction Type :
-                                </label>
-                            </div>
-                            <div className="col-md-10">
-                                <div className="d-flex gap-3">
-                                    <div
-                                        className={`card ${txnType === "UPI"
-                                            ? "border-primary bg-primary-subtle"
-                                            : ""
-                                            }`}
-                                        style={{
-                                            cursor: "pointer",
-                                            width: "100px"
-                                        }}
-                                        onClick={() => setTxnType("UPI")}
-                                    >
-                                        <div className="card-body py-2 text-center ">
-                                            📱 UPI
-                                        </div>
-                                    </div>
-                                    <div
-                                        className={`card ${txnType === "CARD"
-                                            ? "border-primary bg-primary-subtle"
-                                            : ""
-                                            }`}
-                                        style={{
-                                            cursor: "pointer",
-                                            width: "100px"
-                                        }}
-                                        onClick={() => setTxnType("CARD")}
-                                    >
-                                        <div className="card-body py-2 text-center">
-                                            💳 POS
+                        <div className="d-flex align-items-center justify-content-between mb-0">
+                            <h6 className="fw-semibold fs-5">Search Transaction</h6>
+
+                        </div>
+                        <p className="text-muted small mb-0">
+                            Search for transaction to raised Refund Request
+                        </p>
+                        <hr style={{ marginTop: "2px" }} />
+
+                        {/* <div className="row g-3 mb-4">
+                           
+                        </div> */}
+
+                        <form onSubmit={handleSearch}>
+                            <div p-4>
+                                <div className="col-md-3">
+                                    <div className="row g-2 mb-3">
+                                        <label className="form-label">Transaction Type *</label>
+                                        <div className="d-flex gap-3">
+                                            <div
+                                                className={`card ${txnType === "UPI" ? "border-primary bg-primary-subtle" : ""}`}
+                                                style={{ cursor: "pointer", width: "100px" }}
+                                                onClick={() => setTxnType("UPI")} style={{
+                                                    cursor: "pointer",
+
+                                                }}
+                                            >
+                                                <div className="card-body py-2 text-center">
+                                                    📱 UPI
+                                                </div>
+                                            </div>
+                                            <div
+                                                className={`card ${txnType === "CARD" ? "border-primary bg-primary-subtle" : ""}`}
+                                                style={{ cursor: "pointer", width: "100px" }}
+                                                onClick={() => setTxnType("CARD")}
+                                            >
+                                                <div className="card-body py-2 text-center">
+                                                    💳 POS
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                        <div className="text-center mb-1 p-1" >
-                            <h5 className="mb-0 text-dark">
-
-                                {txnType === "UPI"
-                                    ? "UPI Refund Request"
-                                    : "POS Refund Request"}
-                            </h5>
-                        </div>
-                        <div style={{ border: "1px solid rgb(191 191 191)", padding: "10px", borderRadius: "10px" }}>
-                            <div className="card-body row p-2 mb-2">
-                                {/* <div className="card-header bg-light fw-bold p-1">Customer Details</div> */}
-                                <div className="col-md-4 ">
-                                    <label className="form-label mb-0">Customer ID</label>
-                                    <div style={{ display: "flex", gap: "8px" }}>
+                                <div className="row g-4">
+                                    <div className="col-md-3">
+                                        <label className="form-label">Transaction Date *</label>
+                                        <input
+                                            type="date"
+                                            name="dateTxn"
+                                            value={searchData.dateTxn}
+                                            max={today}
+                                            className={`form-control form-control-custom ${searchErrors.dateTxn ? "is-invalid" : ""}`}
+                                            onChange={handleSearchChange}
+                                        />
+                                        {searchErrors.dateTxn && <div className="invalid-feedback">{searchErrors.dateTxn}</div>}
+                                    </div>
+                                    <div className="col-md-3">
+                                        <label className="form-label">Customer ID *</label>
                                         <input
                                             type="text"
                                             name="custId"
-                                            value={formData.custId || ""}
-                                            // className={`form-control ${errors.custId ? "is-invalid" : ""}`}
-                                            className={`form-control ${errors.custId || CustStatus === "Invalid"
-                                                ? "is-invalid"
-                                                : ""
-                                                }`}
-                                            onChange={handleChange}
+                                            value={searchData.custId}
+                                            className={`form-control form-control-custom ${searchErrors.custId ? "is-invalid" : ""}`}
+                                            onChange={handleSearchChange}
                                         />
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline-primary fetch-btn"
-                                            onClick={fetchCustomerDetails}
-                                            disabled={fetchingCust || CustStatus === "Valid"}
-                                            title="Fetch Customer details"
-                                        >
-                                            {fetchingCust ? <FaSpinner className="spin" /> : <FaSearch />}
-                                            <span className="ms-1">{fetchingCust ? "" : ""}</span>
-                                        </button>
+                                        {searchErrors.custId && <div className="invalid-feedback">{searchErrors.custId}</div>}
                                     </div>
-                                    {errors.custId && (
-                                        <div className="text-danger small">
-                                            {errors.custId}
-                                        </div>
-                                    )}
-                                    {fetchCustError && (
-                                        <div className="text-danger small">{fetchCustError}</div>
-                                    )}
-                                </div>
-                                <div className="col-md-4">
-                                    <label className="form-label mb-0">Account Number</label>
-                                    <div style={{ display: "flex", gap: "8px" }}>
+                                    <div className="col-md-3">
+                                        <label className="form-label">Account Number *</label>
                                         <input
                                             type="text"
                                             name="accountNo"
-                                            value={maskAccountNumber(formData.accountNo)}
-                                            className={`form-control ${errors.accountNo ? "is-invalid" : ""
-                                                }`}
-                                            readOnly
+                                            value={searchData.accountNo}
+                                            className={`form-control form-control-custom ${searchErrors.accountNo ? "is-invalid" : ""}`}
+                                            onChange={handleSearchChange}
                                         />
+                                        {searchErrors.accountNo && <div className="invalid-feedback">{searchErrors.accountNo}</div>}
                                     </div>
-                                    {errors.accountNo && (
-                                        <div className="text-danger small">
-                                            {errors.accountNo}
-                                        </div>
-                                    )}
-                                    {fetchAccError && (
-                                        <div className="text-danger small">{fetchAccError}</div>
-                                    )}
                                 </div>
-                                <div className="col-md-4">
-                                    <label className="form-label mb-0">Sol</label>
-                                    <input
-                                        type="text"
-                                        name="sol"
-                                        value={formData.sol || ""}
-                                        className={`form-control ${errors.sol ? "is-invalid" : ""}`}
-                                        onChange={handleChange} readOnly
-                                    />
-                                    {errors && (
-                                        <div className="invalid-feedback">{errors.sol}</div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Transaction Details */}
-                            {/* <div className="card-header bg-light fw-bold p-1">Refund Details</div> */}
-                            <div className="card-body row p-2 ">
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">
-                                        MID
-                                    </label>
-                                    <div style={{ display: "flex", gap: "8px" }}>
-                                        <input
-                                            type="text"
-                                            name="mid"
-                                            value={formData.mid || ""}
-                                            className={`form-control ${midStatus === "invalid"
-                                                ? "is-invalid"
-                                                : ""
-                                                }`}
-                                            onChange={handleChange}
-                                        />
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline-primary"
-                                            onClick={validateMid}
-                                            disabled={fetchingMid || midStatus === "valid"}
-                                            title="Validate MID"
-                                        >
-                                            {
-                                                fetchingMid ? (
-                                                    <FaSpinner className="spin" />
-                                                ) : midStatus === "valid" ? (
-                                                    <span className="text-success fw-bold">
-                                                        ✓
-                                                    </span>
-                                                ) : (
-                                                    <FaSearch />
-                                                )
-                                            }
-                                        </button>
-                                    </div>
-                                    {midError && (
-                                        <div className="text-danger small">
-                                            {midError}
-                                        </div>
-                                    )}
-                                    {midStatus === "valid" && (
-                                        <div className="text-success small">
-                                            MID verified successfully
-                                        </div>
-                                    )}
-                                    {errors.mid && (
-                                        <div className="text-danger small">
-                                            {errors.mid}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">TID</label>
-                                    <input
-                                        type="text"
-                                        name="tid"
-                                        value={formData.tid || ""}
-                                        className="form-control"
-                                        readOnly
-                                    />
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">Date of Transaction</label>
-                                    <input
-                                        type="date"
-                                        name="dateTxn"
-                                        value={formData.dateTxn || ""}
-                                        className="form-control"
-                                        onChange={handleChange}
-                                    />
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">
-                                        RRN
-                                    </label>
-                                    <div style={{ display: "flex", gap: "8px" }}>
+                                <div className="row g-4 mt-2 align-items-end">
+                                    <div className="col-md-3">
+                                        <label className="form-label">RRN *</label>
                                         <input
                                             type="text"
                                             name="rrn"
-                                            value={formData.rrn || ""}
-                                            className={`form-control ${rrnStatus === "invalid"
-                                                ? "is-invalid"
-                                                : ""
-                                                }`}
-                                            onChange={handleChange}
+                                            value={searchData.rrn}
+                                            className={`form-control form-control-custom ${searchErrors.rrn ? "is-invalid" : ""}`}
+                                            onChange={handleSearchChange}
                                         />
+                                        {searchErrors.rrn && <div className="invalid-feedback">{searchErrors.rrn}</div>}
+                                    </div>
+                                    <div className="col-md-3">
+                                        <label className="form-label">MID *</label>
+                                        <input
+                                            type="text"
+                                            name="mid"
+                                            value={searchData.mid}
+                                            className={`form-control form-control-custom ${searchErrors.mid ? "is-invalid" : ""}`}
+                                            onChange={handleSearchChange}
+                                        />
+                                        {searchErrors.mid && <div className="invalid-feedback">{searchErrors.mid}</div>}
+                                    </div>
+                                    <div className="col-md-2 d-flex align-items-end justify-content-end">
                                         <button
-                                            type="button"
-                                            className="btn btn-outline-primary"
-                                            onClick={validateRRN}
-                                            disabled={
-                                                fetchingRrn ||
-                                                rrnStatus === "valid"
-                                            }
+                                            type="submit"
+                                            className="btn btn-primary w-75"
+                                            disabled={searching}
                                         >
-                                            {
-                                                fetchingRrn
-                                                    ? <FaSpinner className="spin" />
-                                                    : rrnStatus === "valid"
-                                                        ? (
-                                                            <span className="text-success fw-bold">
-                                                                ✓
-                                                            </span>
-                                                        )
-                                                        : <FaSearch />
-                                            }
+                                            {searching ? (
+                                                <><FaSpinner className="spin me-2" />Searching</>
+                                            ) : (
+                                                <><FaSearch className="me-2" />Search</>
+                                            )}
                                         </button>
                                     </div>
-                                    {
-                                        rrnError &&
-                                        (
-                                            <div className="text-danger small">
-                                                {rrnError}
-                                            </div>
-                                        )
-                                    }
-                                    {
-                                        rrnStatus === "valid" &&
-                                        (
-                                            <div className="text-success small">
-                                                RRN verified successfully
-                                            </div>
-                                        )
-                                    }
+                                </div>
+                                {/* <div className="row g-3 mt-4 align-items-end">
+
+                                    <div className="col-md-5 d-flex align-items-end justify-content-end">
+                                        <button type="submit" className="btn btn-primary" disabled={searching}>
+                                            {searching ? (
+                                                <><FaSpinner className="spin me-2" />Searching</>
+                                            ) : (
+                                                <><FaSearch className="me-2" />Search</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div> */}
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {transactionFound && transactionDetails && (
+                <div>
+                    <div className="card shadow-sm border-0 mb-2">
+                        <div className="card-body p-4">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <div>
+                                    <h6 className="mb-0 fw-semibold fs-5">Transaction Details</h6>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-primary fetch-btn"
+                                    onClick={handleEditSearch}
+                                    title="Edit search fields"
+                                >
+                                    <span className="ms-1">Edit Search</span>
+                                </button>
+
+                            </div>
+                            <div className="row g-3">
+                                <div className="col-md-3">
+                                    <label className="form-label ">Customer ID</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.custId || searchData.custId || "-"}
+                                    />
+                                </div>
+                                <div className="col-md-3">
+                                    <label className="form-label">Account Number</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.accountNo || searchData.accountNo || "-"}
+                                    />
+                                </div>
+                                <div className="col-md-3">
+                                    <label className="form-label">SOL</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.sol || "-"}
+                                    />
+                                </div>
+                                <div className="col-md-3">
+                                    <label className="form-label">RRN</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.rrn || searchData.rrn || "-"}
+                                    />
+                                </div>
+                                <div className="col-md-3">
+                                    <label className="form-label">Transaction Amount</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.tranAmount ? `₹ ${transactionDetails.tranAmount.toLocaleString()}` : "-"}
+                                    />
+                                </div>
+                                <div className="col-md-3">
+                                    <label className="form-label">MID</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.mid || searchData.mid || "-"}
+                                    />
+                                </div>
+                                <div className="col-md-3">
+                                    <label className="form-label">Transaction Date</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.dateTxn || searchData.dateTxn || "-"}
+                                    />
                                 </div>
                                 {txnType === "UPI" && (
                                     <>
-                                        <div className="col-md-4 mb-3">
-                                            <label className="form-label mb-0">Gateway Transaction ID </label>
+                                        <div className="col-md-3">
+                                            <label className="form-label">Merchant VPA</label>
                                             <input
                                                 type="text"
-                                                name="gateTxnId"
-                                                value={formData.gateTxnId || ""}
-                                                className="form-control"
                                                 readOnly
+                                                className="form-control form-control-custom"
+                                                value={transactionDetails.merchantVPA || "-"}
                                             />
                                         </div>
-                                        <div className="col-md-4 mb-3">
-                                            <label className="form-label">Merchant VPA</label>
-                                            <input type="text" name="merchantVPA" className="form-control" onChange={handleChange} readOnly />
+                                        <div className="col-md-3">
+                                            <label className="form-label">Gateway Transaction ID</label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                className="form-control form-control-custom"
+                                                value={transactionDetails.gateTxnId || "-"}
+                                            />
                                         </div>
                                     </>
                                 )}
                                 {txnType === "CARD" && (
                                     <>
-                                        <div className="col-md-4 mb-3">
-                                            <label className="form-label mb-0">Card Number </label>
-                                            <input type="text" name="cardNum" className="form-control" onChange={handleChange} readOnly />
+                                        <div className="col-md-3">
+                                            <label className="form-label">Card Number</label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                className="form-control form-control-custom"
+                                                value={transactionDetails.maskedCardNumber || (transactionDetails.cardNumber ? maskCardNumber(transactionDetails.cardNumber) : "-")}
+                                            />
                                         </div>
-                                        <div className="col-md-4 mb-3">
-                                            <label className="form-label mb-0">Auth Code</label>
-                                            <input type="text" name="authCode" className="form-control" onChange={handleChange} readOnly />
+                                        <div className="col-md-3">
+                                            <label className="form-label">Auth Code</label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                className="form-control form-control-custom"
+                                                value={transactionDetails.authCode || "-"}
+                                            />
                                         </div>
-                                    </>
-                                )}
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">Transaction Amount</label>
-                                    <input
-                                        type="number"
-                                        name="tranAmount"
-                                        value={formData.tranAmount || ""}
-                                        className="form-control"
-                                        readOnly
-                                    />
-                                    {errors.dateTxn && (
-                                        <div className="text-danger small">
-                                            {errors.dateTxn}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">Refund Amount</label>
-                                    <input type="number" name="refundAmt" className="form-control" onChange={handleChange} />
-                                    {errors.refundAmt && (
-                                        <div className="text-danger small">
-                                            {errors.refundAmt}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {txnType === "CARD" && (
-                                    <>
-                                        <div className="col-md-4 mb-3">
-                                            <label className="form-label mb-0">Scheme</label>
-                                            <input type="text" name="scheme" className="form-control" onChange={handleChange} readOnly />
+                                        <div className="col-md-3">
+                                            <label className="form-label">Scheme</label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                className="form-control form-control-custom"
+                                                value={transactionDetails.scheme || "-"}
+                                            />
                                         </div>
                                     </>
                                 )}
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">Upload Document</label>
-                                    <input
-                                        ref={fileRef}
-                                        type="file"
-                                        accept=".pdf,.jpg,.jpeg,.png" name="uDocument" className="form-control" onChange={handleChange} />
-                                    {errors.uDocument && (
-                                        <div className="text-danger small">
-                                            {errors.uDocument}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">User Name</label>
+                                <div className="col-md-3">
+                                    <label className="form-label">Entry User Name</label>
                                     <input
                                         type="text"
-                                        name="uName"
-                                        value={formData.uName || ""}
-                                        className="form-control"
                                         readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.entryUser || "-"}
                                     />
                                 </div>
-                                <div className="col-md-4 mb-3">
-                                    <label className="form-label mb-0">User Email</label>
+                                <div className="col-md-3">
+                                    <label className="form-label">Entry User Email</label>
                                     <input
                                         type="text"
-                                        name="uEmail"
-                                        value={formData.uEmail || ""}
-                                        className="form-control"
                                         readOnly
+                                        className="form-control form-control-custom"
+                                        value={transactionDetails.uEmail || "-"}
                                     />
                                 </div>
-                            </div>
-                            <div className="d-flex justify-content-end gap-2">
-                                <button type="submit" className="btn btn-primary">Submit</button>
-                                <button type="reset" className="btn btn-secondary" onClick={handleReset}>Reset</button>
-                                {/* <button type="button" className="btn btn-danger">Delete</button> */}
                             </div>
                         </div>
                     </div>
-                </div>
-
-                {/* Action Buttons */}
-            </form >
-            {showModal && (
-                <div className="modal show d-block" tabIndex="-1">
-                    <div className="modal-dialog modal-md"> {/* smaller popup */}
-                        <div className="modal-content">
-                            <div className="modal-header">
-                                <h6 className="modal-title">Select Customer Record</h6>
-                                <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
-                            </div>
-                            <div className="modal-body">
-                                <table className="table table-bordered table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Cust ID</th>
-                                            <th>Account No</th>
-                                            <th>Sol</th>
-                                            <th>Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {custResults.length > 0 ? (
-                                            custResults.map((cust, index) => (
-                                                <tr key={index}>
-                                                    <td>{cust.custId}</td>
-                                                    <td>{maskAccountNumber(cust.acctNo)}</td>
-                                                    <td>{cust.sol}</td>
-                                                    <td>
-                                                        <button
-                                                            className="btn btn-sm btn-primary"
-                                                            onClick={() => {
-                                                                setFormData(f => ({
-                                                                    ...f,
-                                                                    custId: cust.custId,
-                                                                    accountNo: cust.acctNo,
-                                                                    sol: cust.sol
-                                                                }));
-                                                                setShowModal(false);
-                                                            }}
-                                                        >
-                                                            Select
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        ) : (
-                                            <tr>
-                                                <td
-                                                    colSpan="4"
-                                                    className="text-center text-danger fw-semibold py-3"
-                                                >
-                                                    The Entered Cust ID is not available in CBS
-                                                </td>
-                                            </tr>
+                    <div className="card shadow-sm border-0 mb-2">
+                        <div className="card-body p-4">
+                            {/* <div className="d-flex align-items-center justify-content-between mb-3">
+                        <h6 className="mb-0 fw-semibold">Refund Details</h6>
+                    </div> */}
+                            <form onSubmit={handleRefundSubmit}>
+                                <div className="row g-3">
+                                    <div className="alert alert-warning py-2 m-2" style={{ fontSize: "13px" }}>
+                                        <strong>Refund amount cannot exceed transaction amount</strong>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <label className="form-label">TID</label>
+                                        <div style={{ display: "flex", gap: "8px" }}>
+                                            <input
+                                                type="text"
+                                                className={`form-control form-control-custom ${tidError ? "is-invalid" : tidValid ? "is-valid" : ""}`}
+                                                value={tidInput}
+                                                onChange={e => {
+                                                    setTidInput(e.target.value);
+                                                    setTidError("");
+                                                    setTidValid(false);
+                                                }}
+                                                placeholder="Enter TID"
+                                            />
+                                            <button
+                                                type="button"
+                                                className="btn btn-outline-primary fetch-btn"
+                                                onClick={handleTidFetch}
+                                                disabled={validatingTid || tidValid}
+                                                title="Fetch TID"
+                                            >
+                                                {validatingTid ? <FaSpinner className="spin" /> : <FaSearch />}
+                                                <span className="ms-1">Fetch</span>
+                                            </button>
+                                        </div>
+                                        {tidError && <div className="invalid-feedback d-block">{tidError}</div>}
+                                        {tidValid && !tidError && (
+                                            <div className="valid-feedback d-block">TID validated successfully.</div>
                                         )}
-                                    </tbody>
-                                </table>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <label className="form-label">Refund Amount (₹) *</label>
+                                        <input
+                                            type="number"
+                                            name="refundAmt"
+                                            value={refundData.refundAmt}
+                                            className={`form-control form-control-custom ${refundErrors.refundAmt ? "is-invalid" : ""}`}
+                                            onChange={handleRefundChange}
+                                        />
+                                        {refundErrors.refundAmt && <div className="invalid-feedback">{refundErrors.refundAmt}</div>}
+                                    </div>
+                                    <div className="col-md-3">
+                                        <label className="form-label">Maximum Refundable Amount</label>
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            className="form-control form-control-custom"
+                                            value={transactionDetails?.tranAmount ? `₹ ${Number(transactionDetails.tranAmount).toLocaleString()}` : "₹ 0"}
+                                        />
+                                        <div className="form-text">
+                                            Remaining after this refund: ₹ {remainingRefundableAmount.toLocaleString()}
+                                        </div>
+                                    </div>
+
+                                    <div className="col-md-3">
+                                        <label className="form-label">Reference Document</label>
+                                        <div className="input-group">
+                                            <span className="input-group-text"><FaFileAlt /></span>
+                                            <input
+                                                type="file"
+                                                name="uDocument"
+                                                className={`form-control form-control-custom ${refundErrors.uDocument ? "is-invalid" : ""}`}
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                onChange={handleRefundChange}
+                                            />
+                                        </div>
+                                        {refundErrors.uDocument && <div className="invalid-feedback d-block">{refundErrors.uDocument}</div>}
+                                    </div>
+                                    {/* <div className="col-md-6">
+                                <div className="alert alert-info p-3">
+                                    <strong>Refund amount cannot exceed transaction amount</strong>
+                                    <div className="small mt-1">Maximum Refundable Amount: {transactionDetails?.tranAmount ? `₹ ${transactionDetails.tranAmount.toLocaleString()}` : "-"}</div>
+                                </div>
                             </div>
+                            <div className="col-md-6">
+                                <div className="alert alert-warning p-3">
+                                    <strong>Note:</strong>
+                                    <ul className="mb-0 small ps-3 pt-1">
+                                        <li>Upload valid supporting document</li>
+                                        <li>Allowed file types: PDF, JPG, PNG</li>
+                                        <li>Maximum file size: 5MB</li>
+                                    </ul>
+                                </div>
+                            </div> */}
+                                </div>
+                                <div className="d-flex justify-content-end gap-2 mt-3">
+                                    <button type="button" className="btn btn-outline-secondary" onClick={() => {
+                                        setRefundData({ refundAmt: "", uDocument: null });
+                                        setRefundErrors({});
+                                    }}>
+                                        Reset
+                                    </button>
+                                    <button type="submit" className="btn btn-primary" disabled={submitting}>
+                                        {submitting ? <><FaSpinner className="spin me-2" />Submitting</> : "Submit Request"}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
             )}
+
+
+
             <AlertModal
                 show={alertConfig.show}
                 title={alertConfig.title}
                 message={alertConfig.message}
                 type={alertConfig.type}
-                onClose={() =>
-                    setAlertConfig(prev => ({
-                        ...prev,
-                        show: false
-                    }))
-                }
+                onClose={() => setAlertConfig(prev => ({ ...prev, show: false }))}
             />
-        </div >
-        // </div>
+        </div>
     );
 };
+
 export default RaisedRequest;

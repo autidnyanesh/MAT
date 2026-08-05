@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 
-const TIMEOUT_MS = 3 * 60 * 1000; // 15 minutes
-const WARNING_MS = 1 * 60 * 1000; // warn at 14 minutes
+const TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes of inactivity
+const WARNING_MS = 14 * 60 * 1000; // show warning 1 minute before logout (at the 14-minute mark)
 
 /**
  * Automatically logs out the user after TIMEOUT_MS of inactivity.

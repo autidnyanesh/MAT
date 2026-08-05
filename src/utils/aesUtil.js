@@ -16,9 +16,18 @@ import CryptoJS from "crypto-js";
  * so backend can call:  decrypt(salt, iv, passphrase, ciphertext)
  */
 
-const KEY_SIZE   = 128 / 32;  // 4 words = 128 bits
+const KEY_SIZE = 128 / 32;  // 4 words = 128 bits
 const ITERATIONS = 1000;
-const PASSPHRASE = "MATSECRETKEY2026";
+
+
+// IMPORTANT — read this before relying on this file for security:
+// Any REACT_APP_* value (including this passphrase) is compiled into the
+// JS bundle shipped to the browser, so it is visible to anyone who opens
+// dev tools — it is not a secret at runtime, regardless of where it's
+// read from. This AES layer only adds defense-in-depth on top of HTTPS;
+// it must never be treated as a substitute for TLS. Keep it in sync with
+// the backend's configured passphrase.
+const PASSPHRASE = process.env.REACT_APP_AES_PASSPHRASE || "MATSECRETKEY2026";
 
 /**
  * Derives a 128-bit AES key using PBKDF2.
@@ -32,9 +41,9 @@ const generateKey = (saltHex, passphrase) =>
     passphrase,
     CryptoJS.enc.Hex.parse(saltHex),
     {
-      keySize:    KEY_SIZE,
+      keySize: KEY_SIZE,
       iterations: ITERATIONS,
-      hasher:     CryptoJS.algo.SHA1, // Java PBKDF2 default uses SHA-1
+      hasher: CryptoJS.algo.SHA1, // Java PBKDF2 default uses SHA-1
     }
   );
 
@@ -54,25 +63,25 @@ const generateKey = (saltHex, passphrase) =>
  */
 export const aesEncrypt = (plainText, passphrase = PASSPHRASE) => {
   const saltHex = CryptoJS.lib.WordArray.random(16).toString(CryptoJS.enc.Hex);
-  const ivHex   = CryptoJS.lib.WordArray.random(16).toString(CryptoJS.enc.Hex);
+  const ivHex = CryptoJS.lib.WordArray.random(16).toString(CryptoJS.enc.Hex);
 
   const key = generateKey(saltHex, passphrase);
-  const iv  = CryptoJS.enc.Hex.parse(ivHex);
+  const iv = CryptoJS.enc.Hex.parse(ivHex);
 
   const encrypted = CryptoJS.AES.encrypt(
     CryptoJS.enc.Utf8.parse(plainText),
     key,
     {
       iv,
-      mode:    CryptoJS.mode.CBC,
+      mode: CryptoJS.mode.CBC,
       padding: CryptoJS.pad.Pkcs7, // PKCS5Padding in Java = PKCS7 in CryptoJS
     }
   );
 
   return {
     ciphertext: encrypted.toString(), // Base64
-    salt:       saltHex,              // Hex
-    iv:         ivHex,                // Hex
+    salt: saltHex,              // Hex
+    iv: ivHex,                // Hex
   };
 };
 
@@ -82,11 +91,11 @@ export const aesEncrypt = (plainText, passphrase = PASSPHRASE) => {
  */
 export const aesDecrypt = (saltHex, ivHex, passphrase = PASSPHRASE, ciphertext) => {
   const key = generateKey(saltHex, passphrase);
-  const iv  = CryptoJS.enc.Hex.parse(ivHex);
+  const iv = CryptoJS.enc.Hex.parse(ivHex);
 
   const decrypted = CryptoJS.AES.decrypt(ciphertext, key, {
     iv,
-    mode:    CryptoJS.mode.CBC,
+    mode: CryptoJS.mode.CBC,
     padding: CryptoJS.pad.Pkcs7,
   });
 
