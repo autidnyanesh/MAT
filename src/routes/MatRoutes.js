@@ -66,7 +66,7 @@ export function renderMatRoutes(user) {
       />
       <Route
         path="/approval-queue"
-        element={matPage(user, [ROLES.SOM, ROLES.BH, ROLES.RH], <ApprovalQueue />)}
+        element={matPage(user, [ROLES.BU], <ApprovalQueue />)}
       />
       <Route
         path="/dco-approval-queue"

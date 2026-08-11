@@ -20,7 +20,7 @@ export const APP_BRAND = {
 export const MAT_ROLE_MENUS = {
   BU: [
     { to: "/raise-request", label: "Raise Requests" },
-    { to: "/dco-approval-queue", label: "Approval Queue" },
+    { to: "/approval-queue", label: "Approval Queue" },
     { to: "/vendor-rejected-resumbit", label: "Vendor Rejected Re-submit" },
     { to: "/my-request", label: "View Requests" },
     { to: "/referred-request", label: "Referred Back Requests" },
@@ -117,13 +117,16 @@ export function getAppMenus(activeApp, role) {
     };
   }
 
+  // File Handling is DCO-only (SFTP / ARN).
+  const isDco = role === "DCO";
+
   return {
     brand: APP_BRAND.MAT,
     roleMenus: MAT_ROLE_MENUS[role] || [],
-    fileMenus: MAT_FILE_MENUS,
+    fileMenus: isDco ? MAT_FILE_MENUS : [],
     topLinks: MAT_TOP_LINKS,
     requestLabel: "Request Handling",
-    showFileHandling: true,
+    showFileHandling: isDco,
     showReports: true,
     reportsTo: "/report",
   };
