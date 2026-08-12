@@ -85,6 +85,54 @@ function Login({ onLogin }) {
     }
   }, []);
 
+  // const refreshCaptcha = useCallback(async () => {
+  //   console.log("1. refreshCaptcha called");
+
+  //   setUserCaptcha("");
+  //   setCaptchaLoadError("");
+
+  //   console.log("2. USE_MOCK_LOGIN =", USE_MOCK_LOGIN);
+
+  //   if (USE_MOCK_LOGIN) {
+  //     console.log("3. Mock login - backend will NOT be called");
+
+  //     const chars =
+  //       "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijklmnopqrstuvwxyz";
+
+  //     let cap = "";
+
+  //     for (let i = 0; i < 6; i++) {
+  //       cap += chars.charAt(Math.floor(Math.random() * chars.length));
+  //     }
+
+  //     setCaptchaAnswer(cap);
+  //     return;
+  //   }
+
+  //   console.log("4. About to call backend");
+
+  //   try {
+  //     const res = await api.get("/api/auth/captcha");
+
+  //     console.log("5. Backend response:", res);
+  //     console.log("6. Response data:", res.data);
+
+  //     setCaptchaId(res.data?.captchaId || null);
+  //     setCaptchaImage(res.data?.imageBase64 || null);
+
+  //   } catch (error) {
+  //     console.error("7. CAPTCHA API ERROR:", error);
+  //     console.error("Response:", error.response);
+  //     console.error("Request:", error.request);
+
+  //     setCaptchaId(null);
+  //     setCaptchaImage(null);
+  //     setCaptchaLoadError(
+  //       "Unable to load captcha. Click refresh to retry."
+  //     );
+  //   }
+  // }, []);
+
   useEffect(() => {
     refreshCaptcha();
   }, [refreshCaptcha]);
@@ -378,7 +426,8 @@ function Login({ onLogin }) {
                   captchaAnswer
                 ) : captchaImage ? (
                   <img
-                    src={`data:image/png;base64,${captchaImage}`}
+                    // src={`data:image/png;base64,${captchaImage}`}
+                    src={captchaImage}
                     alt="Captcha"
                     className="auth-captcha-image"
                   />
