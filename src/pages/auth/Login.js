@@ -318,10 +318,10 @@ function Login({ onLogin }) {
             <span className="brand-word">Merchant Terminal</span><br />
           </div>
 
-          <p className="graphic-caption position-relative mb-0">
+          <div className="graphic-caption position-relative mb-0">
             <div className="auth-sub-lg">IDBI Bank</div>
             Every branch request routes through maker-checker review before it takes effect.
-          </p>
+          </div>
         </div>
 
         <div className="auth-form-panel">
