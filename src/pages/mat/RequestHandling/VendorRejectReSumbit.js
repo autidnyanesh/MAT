@@ -287,7 +287,7 @@ const VendorRejectReSumbit = () => {
                                         <td className="text-danger fw-semibold">{row.rejectionReason}</td>
                                         <td>
                                             <a
-                                                href="/"
+                                                href="/home"
                                                 onClick={(e) => {
                                                     e.preventDefault();
                                                     openDocument(row.requestId);

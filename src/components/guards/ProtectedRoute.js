@@ -9,14 +9,14 @@ import { Navigate } from "react-router-dom";
  *  - allowedRoles: array of role strings that may access this route
  *  - children    : the page component to render
  *
- * Redirects to "/" if the user's role is not permitted.
+ * Redirects to "/home" if the user's role is not permitted.
  */
 const ProtectedRoute = ({ user, allowedRoles, children }) => {
   if (!user) return <Navigate to="/" replace />;
 
   if (allowedRoles && allowedRoles.length > 0) {
     if (!allowedRoles.includes(user.role)) {
-      return <Navigate to="/" replace />;
+      return <Navigate to="/home" replace />;
     }
   }
 

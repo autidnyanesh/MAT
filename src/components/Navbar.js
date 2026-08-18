@@ -58,7 +58,7 @@ function Navbar({ user, onLogout }) {
     if (!ok) return;
     const commonPaths = ["/profileManagement", "/profile-management"];
     if (!commonPaths.includes(location.pathname)) {
-      navigate("/", { replace: true });
+      navigate("/home", { replace: true });
     }
   };
 
@@ -70,7 +70,7 @@ function Navbar({ user, onLogout }) {
       <nav className="navbar navbar-expand-lg navbar-light shadow-sm mat-navbar px-3">
         <div className="container-fluid" style={{ fontWeight: "500" }}>
           <Link
-            to="/"
+            to="/home"
             className="navbar-brand d-flex flex-column align-items-center text-decoration-none me-5"
           >
             <div
@@ -171,7 +171,7 @@ function Navbar({ user, onLogout }) {
                       className={`nav-link ${
                         pathActive(item.path) ? "active fw-semibold text-primary" : ""
                       }`}
-                      to={item.path || "/"}
+                      to={item.path || "/home"}
                     >
                       <MenuIcon name={iconForMenu(item)} />
                       {item.label}

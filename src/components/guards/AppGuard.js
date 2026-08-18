@@ -9,7 +9,7 @@ import { useApplication } from "../../context/ApplicationContext";
 function AppGuard({ app, children }) {
   const { activeApp } = useApplication();
   if (activeApp !== app) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/home" replace />;
   }
   return children;
 }

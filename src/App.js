@@ -4,6 +4,8 @@ import {
   Routes,
   Route,
   Navigate,
+  useNavigate,
+  useLocation,
 } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/guards/ProtectedRoute";
@@ -49,8 +51,9 @@ function AppShell() {
 
         <section className="content-shell">
           <Routes>
+            <Route path="/" element={<Navigate to="/home" replace />} />
             <Route
-              path="/"
+              path="/home"
               element={
                 <ProtectedRoute user={user} allowedRoles={ALL_ROLES}>
                   {activeApp === APPS.MEA ? <MeaDashboard /> : <MatDashboard />}
@@ -62,7 +65,7 @@ function AppShell() {
             {renderMeaRoutes(user)}
             {renderCommonRoutes(user)}
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
         </section>
       </main>
@@ -126,21 +129,53 @@ function App() {
           <div className="d-flex justify-content-center align-items-center min-vh-100 text-muted">
             loading…
           </div>
-        ) : !user ? (
-          authPage === "login" ? (
-            <Login
-              onLogin={handleLogin}
-              goToRegister={() => setAuthPage("register")}
-            />
-          ) : (
-            <Register goToLogin={() => setAuthPage("login")} />
-          )
         ) : (
-          <AppShell />
+          <AppRoutes
+            user={user}
+            authPage={authPage}
+            setAuthPage={setAuthPage}
+            onLogin={handleLogin}
+          />
         )}
       </div>
     </BrowserRouter>
   );
+}
+
+/** Inside BrowserRouter: logout → "/"; login → "/home". */
+function AppRoutes({ user, authPage, setAuthPage, onLogin }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Logout / session-expired: login UI at "/"
+  useEffect(() => {
+    if (!user && location.pathname !== "/") {
+      navigate("/", { replace: true });
+    }
+  }, [user, location.pathname, navigate]);
+
+  // After login / restore on root: open dashboard
+  useEffect(() => {
+    if (user && location.pathname === "/") {
+      navigate("/home", { replace: true });
+    }
+  }, [user, location.pathname, navigate]);
+
+  if (!user) {
+    return authPage === "login" ? (
+      <Login
+        onLogin={(data) => {
+          onLogin(data);
+          navigate("/home", { replace: true });
+        }}
+        goToRegister={() => setAuthPage("register")}
+      />
+    ) : (
+      <Register goToLogin={() => setAuthPage("login")} />
+    );
+  }
+
+  return <AppShell />;
 }
 
 export default App;
