@@ -23,15 +23,7 @@ function meaPage(user, allowedRoles, element) {
   );
 }
 
-const APPROVER_ROLES = [
-  ROLES.DCO,
-  ROLES.DCOC,
-  ROLES.SOM,
-  ROLES.BH,
-  ROLES.RH,
-  ROLES.AGM,
-  ROLES.DGM,
-];
+const APPROVER_ROLES = [ROLES.DCO, ROLES.DCOC];
 
 /** MEA-only routes (merchant enablement / enrolment). */
 export function renderMeaRoutes(user) {

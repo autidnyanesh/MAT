@@ -6,18 +6,14 @@ import { APPS } from "../context/ApplicationContext";
 import { ALL_ROLES, ROLES } from "../config/roles";
 import {
   MatReport,
-  // FinalApproval,
   SFTPFileHandling,
   ARNFileHandling,
   RaisedRequest,
   MyRequest,
-  // ApprovalQueue,
   ArchivalEnquiry,
   ReferredBRequest,
-  PullRequest,
   Rejected,
   DCOApprovalQueue,
-  RejectionAfterTransaction,
   VendorRejectedRefund,
   VendorRejectReSumbit,
 } from "../pages/mat";
@@ -32,7 +28,7 @@ function matPage(user, allowedRoles, element) {
   );
 }
 
-/** MAT-only routes (refund / reversal / file handling). */
+/** MAT-only routes wired to navbar menus. */
 export function renderMatRoutes(user) {
   return (
     <>
@@ -57,24 +53,12 @@ export function renderMatRoutes(user) {
         element={matPage(user, [ROLES.BU], <ReferredBRequest />)}
       />
       <Route
-        path="/pullRequest"
-        element={matPage(user, ALL_ROLES, <PullRequest />)}
-      />
-      <Route
         path="/rejected"
         element={matPage(user, [ROLES.BU, ROLES.DCO], <Rejected />)}
       />
-      {/* <Route
-        path="/approvalQueue"
-        element={matPage(user, [ROLES.BU], <ApprovalQueue />)}
-      /> */}
       <Route
         path="/approvalQueue"
         element={matPage(user, [ROLES.BU, ROLES.DCO], <DCOApprovalQueue />)}
-      />
-      <Route
-        path="/rejection-after-txn"
-        element={matPage(user, [ROLES.DCO], <RejectionAfterTransaction />)}
       />
       <Route
         path="/archivalEnquiry"

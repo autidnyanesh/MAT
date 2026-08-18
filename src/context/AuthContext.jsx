@@ -18,7 +18,6 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [theme, setTheme] = useState("light");
-  const [authPage, setAuthPage] = useState("login");
   const [booting, setBooting] = useState(true);
 
   const login = useCallback((userData) => {
@@ -44,7 +43,6 @@ export function AuthProvider({ children }) {
         clearAccessToken();
         resetSessionRestoreCache();
         setUser(null);
-        setAuthPage("login");
       });
   }, []);
 
@@ -92,10 +90,8 @@ export function AuthProvider({ children }) {
       booting,
       theme,
       setTheme,
-      authPage,
-      setAuthPage,
     }),
-    [user, login, logout, booting, theme, authPage]
+    [user, login, logout, booting, theme]
   );
 
   return (

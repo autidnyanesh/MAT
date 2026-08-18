@@ -11,7 +11,7 @@ import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/guards/ProtectedRoute";
 import useSessionTimeout from "./hooks/useSessionTimeout";
 import AlertModal from "./components/AlertModel";
-import { Login, Register } from "./pages/auth";
+import { Login } from "./pages/auth";
 import { MatDashboard } from "./pages/mat";
 import { MeaDashboard } from "./pages/mea";
 import { renderMatRoutes } from "./routes/MatRoutes";
@@ -74,7 +74,7 @@ function AppShell() {
 }
 
 function App() {
-  const { user, login, theme, authPage, setAuthPage, booting } = useAuth();
+  const { user, login, theme, booting } = useAuth();
   const { setActiveApp, setAllowedApps, resetApplication } = useApplication();
 
   const handleLogin = (userData) => {
@@ -90,8 +90,6 @@ function App() {
   };
 
   // Keep ApplicationContext in sync on login, F5 restore, and logout.
-  // Previously restore only set AuthContext.user — activeApp/allowedApps
-  // could stay stale (sessionStorage vs server profile mismatch).
   useEffect(() => {
     if (booting) return;
 
@@ -130,12 +128,7 @@ function App() {
             loading…
           </div>
         ) : (
-          <AppRoutes
-            user={user}
-            authPage={authPage}
-            setAuthPage={setAuthPage}
-            onLogin={handleLogin}
-          />
+          <AppRoutes user={user} onLogin={handleLogin} />
         )}
       </div>
     </BrowserRouter>
@@ -143,18 +136,16 @@ function App() {
 }
 
 /** Inside BrowserRouter: logout → "/"; login → "/home". */
-function AppRoutes({ user, authPage, setAuthPage, onLogin }) {
+function AppRoutes({ user, onLogin }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Logout / session-expired: login UI at "/"
   useEffect(() => {
     if (!user && location.pathname !== "/") {
       navigate("/", { replace: true });
     }
   }, [user, location.pathname, navigate]);
 
-  // After login / restore on root: open dashboard
   useEffect(() => {
     if (user && location.pathname === "/") {
       navigate("/home", { replace: true });
@@ -162,16 +153,13 @@ function AppRoutes({ user, authPage, setAuthPage, onLogin }) {
   }, [user, location.pathname, navigate]);
 
   if (!user) {
-    return authPage === "login" ? (
+    return (
       <Login
         onLogin={(data) => {
           onLogin(data);
           navigate("/home", { replace: true });
         }}
-        goToRegister={() => setAuthPage("register")}
       />
-    ) : (
-      <Register goToLogin={() => setAuthPage("login")} />
     );
   }
 
