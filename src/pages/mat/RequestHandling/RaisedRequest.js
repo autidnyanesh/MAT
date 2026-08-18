@@ -5,6 +5,7 @@ import AlertModal from "../../../components/AlertModel";
 import api from "../../../api/axiosConfig";
 import { sanitizeInput, validateFile, maskCardNumber, validateCardReference } from "../../../utils/sanitize";
 import "../../../styles/main.css";
+import { useAuth } from "../../../context/AuthContext";
 
 const RaisedRequest = () => {
     const [txnType, setTxnType] = useState("UPI");
@@ -29,6 +30,7 @@ const RaisedRequest = () => {
     const [refundErrors, setRefundErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [cardValidationError, setCardValidationError] = useState("");
+    const { user } = useAuth();
 
     const [alertConfig, setAlertConfig] = useState({
         show: false,
@@ -308,29 +310,6 @@ const RaisedRequest = () => {
 
     return (
         <div className="container-fluid p-2 raised-request-body">
-            {/* <style>{`
-                .raised-request-body label,
-                .raised-request-body .form-control,
-                .raised-request-body .input-group-text,
-                .raised-request-body .form-label {
-                    font-size: 14px !important;
-                }
-                .raised-request-body .fetch-btn {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                }
-                .raised-request-body .input-group-sm .form-control,
-                .raised-request-body .form-control-sm {
-                    padding: .25rem .5rem;
-                    height: calc(1.5em + .5rem);
-                    font-size: 1rem !important;
-                }
-                .raised-request-body .btn-sm {
-                    font-size: 14px;
-                    padding: .25rem .5rem;
-                }
-            `}</style> */}
             <nav aria-label="breadcrumb" className="mb-3">
                 <ol className="breadcrumb small">
                     <li className="breadcrumb-item">
@@ -621,7 +600,7 @@ const RaisedRequest = () => {
                                         type="text"
                                         readOnly
                                         className="form-control form-control-custom"
-                                        value={transactionDetails.entryUser || "-"}
+                                        value={user?.displayName || user?.username || "-"}
                                     />
                                 </div>
                                 <div className="col-md-3">
@@ -630,7 +609,7 @@ const RaisedRequest = () => {
                                         type="text"
                                         readOnly
                                         className="form-control form-control-custom"
-                                        value={transactionDetails.uEmail || "-"}
+                                        value={user?.email || "-"}
                                     />
                                 </div>
                             </div>

@@ -12,13 +12,13 @@ export const APPS = Object.freeze({
   MEA: "MEA",
 });
 
-const STORAGE_KEY = "mat_active_app";
+export const ACTIVE_APP_STORAGE_KEY = "mat_active_app";
 
 const ApplicationContext = createContext(null);
 
 function readStoredApp() {
   try {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
+    const saved = sessionStorage.getItem(ACTIVE_APP_STORAGE_KEY);
     if (saved === APPS.MAT || saved === APPS.MEA) return saved;
   } catch {
     /* sessionStorage unavailable */
@@ -34,7 +34,7 @@ export function ApplicationProvider({ children }) {
     const next = app === APPS.MEA ? APPS.MEA : APPS.MAT;
     setActiveAppState(next);
     try {
-      sessionStorage.setItem(STORAGE_KEY, next);
+      sessionStorage.setItem(ACTIVE_APP_STORAGE_KEY, next);
     } catch {
       /* ignore */
     }
@@ -65,7 +65,7 @@ export function ApplicationProvider({ children }) {
     setActiveApp(APPS.MAT);
     setAllowedAppsState([APPS.MAT, APPS.MEA]);
     try {
-      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(ACTIVE_APP_STORAGE_KEY);
     } catch {
       /* ignore */
     }

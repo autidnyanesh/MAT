@@ -12,7 +12,10 @@ const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
 // Set REACT_APP_USE_MOCK_LOGIN=false once the backend /api/login and
 // /api/auth/captcha endpoints are ready. Defaults to mock mode (true) so
 // local frontend dev keeps working without a running backend.
-const USE_MOCK_LOGIN = process.env.REACT_APP_USE_MOCK_LOGIN !== "false";
+const USE_MOCK_LOGIN = process.env.REACT_APP_USE_MOCK_LOGIN === "true";
+
+/** Shared initial captcha fetch — avoids double GET under React StrictMode. */
+let initialCaptchaPromise = null;
 
 const DUMMY_USERS = [
   { username: "BU001", password: "pass123", role: "BU", displayName: "BU User", email: "bu@sbi.co.in", sol: "1001", solName: "Mumbai Main", regionName: "West", zoneName: "Zone A" },
@@ -58,7 +61,8 @@ function Login({ onLogin }) {
   const [loginType, setLoginType] = useState("MAT"); // Default MAT
 
   // ── Get a fresh captcha ──────────────────────────────────────────────────
-  const refreshCaptcha = useCallback(async () => {
+  // force=false reuses in-flight request (React StrictMode); button uses force=true
+  const refreshCaptcha = useCallback(async (force = true) => {
     setUserCaptcha("");
     setCaptchaLoadError("");
 
@@ -70,71 +74,24 @@ function Login({ onLogin }) {
       return;
     }
 
-    // Real backend: GET /api/auth/captcha -> { captchaId, imageBase64 }
-    // The server renders the characters into an image and keeps the
-    // answer tied to captchaId server-side (session/cache) — it's never
-    // sent to the client in any form.
     try {
-      const res = await api.get("/api/auth/captcha");
-      setCaptchaId(res.data?.captchaId || null);
-      setCaptchaImage(res.data?.imageBase64 || null);
+      if (force) initialCaptchaPromise = null;
+      if (!initialCaptchaPromise) {
+        initialCaptchaPromise = api.get("/api/auth/captcha").then((res) => res.data);
+      }
+      const data = await initialCaptchaPromise;
+      setCaptchaId(data?.captchaId || null);
+      setCaptchaImage(data?.imageBase64 || null);
     } catch {
+      initialCaptchaPromise = null;
       setCaptchaId(null);
       setCaptchaImage(null);
       setCaptchaLoadError("Unable to load captcha. Click refresh to retry.");
     }
   }, []);
 
-  // const refreshCaptcha = useCallback(async () => {
-  //   console.log("1. refreshCaptcha called");
-
-  //   setUserCaptcha("");
-  //   setCaptchaLoadError("");
-
-  //   console.log("2. USE_MOCK_LOGIN =", USE_MOCK_LOGIN);
-
-  //   if (USE_MOCK_LOGIN) {
-  //     console.log("3. Mock login - backend will NOT be called");
-
-  //     const chars =
-  //       "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijklmnopqrstuvwxyz";
-
-  //     let cap = "";
-
-  //     for (let i = 0; i < 6; i++) {
-  //       cap += chars.charAt(Math.floor(Math.random() * chars.length));
-  //     }
-
-  //     setCaptchaAnswer(cap);
-  //     return;
-  //   }
-
-  //   console.log("4. About to call backend");
-
-  //   try {
-  //     const res = await api.get("/api/auth/captcha");
-
-  //     console.log("5. Backend response:", res);
-  //     console.log("6. Response data:", res.data);
-
-  //     setCaptchaId(res.data?.captchaId || null);
-  //     setCaptchaImage(res.data?.imageBase64 || null);
-
-  //   } catch (error) {
-  //     console.error("7. CAPTCHA API ERROR:", error);
-  //     console.error("Response:", error.response);
-  //     console.error("Request:", error.request);
-
-  //     setCaptchaId(null);
-  //     setCaptchaImage(null);
-  //     setCaptchaLoadError(
-  //       "Unable to load captcha. Click refresh to retry."
-  //     );
-  //   }
-  // }, []);
-
   useEffect(() => {
-    refreshCaptcha();
+    refreshCaptcha(false);
   }, [refreshCaptcha]);
 
   // Unlock account once lockout period expires
@@ -145,14 +102,14 @@ function Login({ onLogin }) {
       setLockedUntil(null);
       setAttempts(0);
       setError("");
-      refreshCaptcha();
+      refreshCaptcha(true);
       return;
     }
     const timer = setTimeout(() => {
       setLockedUntil(null);
       setAttempts(0);
       setError("");
-      refreshCaptcha();
+      refreshCaptcha(true);
     }, remaining);
     return () => clearTimeout(timer);
   }, [lockedUntil, refreshCaptcha]);
@@ -172,7 +129,7 @@ function Login({ onLogin }) {
     } else {
       setError(message || `Invalid credentials. ${MAX_ATTEMPTS - next} attempt(s) remaining.`);
     }
-    refreshCaptcha();
+    refreshCaptcha(true);
   };
 
   const handleLogin = async () => {
@@ -252,16 +209,17 @@ function Login({ onLogin }) {
 
       if (response.status === 200 && response.data?.accessToken) {
         setAttempts(0);
-        setAccessToken(response.data.accessToken); // memory only, never persisted
+        const { accessToken, ...profile } = response.data;
+        setAccessToken(accessToken); // memory only — never put in React state
         const activeApp =
-          response.data.activeApp ||
-          response.data.application ||
+          profile.activeApp ||
+          profile.application ||
           (loginType === "MEA" ? "MEA" : "MAT");
         onLogin({
-          ...response.data,
-          username: response.data.username || cleanUsername,
+          ...profile,
+          username: profile.username || cleanUsername,
           activeApp: activeApp === "MEA" ? "MEA" : "MAT",
-          allowedApps: response.data.allowedApps || ["MAT", "MEA"],
+          allowedApps: profile.allowedApps || ["MAT", "MEA"],
         });
         return;
       }

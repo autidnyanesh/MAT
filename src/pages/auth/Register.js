@@ -154,13 +154,11 @@ function Register({ goToLogin }) {
       return; 
     }
     try {
-      console.log("form: " + JSON.stringify(form, null, 2));
       const response = await axios.post("http://localhost:8080/api/registerUser", form);
     
       // Check backend status code
       if (response.status === 200) {
         alert( "The user has been registered successfully, and the request has been forwarded to the Head for approval.");
-        console.log("response:", response.data);
         setErrors({});
         goToLogin();
       } else {

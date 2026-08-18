@@ -13,50 +13,57 @@ import {
 } from "react-icons/fa";
 import "../styles/main.css";
 import { APPS, useApplication } from "../context/ApplicationContext";
-import { getAppMenus, COMMON_PROFILE_LINKS } from "../config/menuConfig";
+import { APP_BRAND } from "../config/menuConfig";
+import { iconForMenu } from "../config/menuApiAdapter";
+import { useMenus } from "../context/MenuContext";
 import AppToggle from "./AppToggle";
+
+const ICONS = {
+  dashboard: FaTachometerAlt,
+  request: FaFileInvoiceDollar,
+  reports: FaFileAlt,
+  file: FaFile,
+  users: FaUsers,
+};
+
+function MenuIcon({ name, className = "me-1" }) {
+  const Icon = ICONS[name] || FaFileAlt;
+  return <Icon className={className} />;
+}
 
 function Navbar({ user, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { activeApp, allowedApps, switchApp } = useApplication();
+  const { menus, profileMenus, brand: menuBrand, loading: menusLoading, error: menusError } =
+    useMenus();
 
-  const [requestOpen, setRequestOpen] = useState(false);
-  const [fileHandlingOpen, setFileHandlingOpen] = useState(false);
+  const [openCode, setOpenCode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  const menusConfig = getAppMenus(activeApp, user?.role);
-  const menus = menusConfig.roleMenus;
-  const fileHandlingMenus = menusConfig.fileMenus;
-  const brand = menusConfig.brand;
+  const brand = menuBrand || (activeApp === APPS.MEA ? APP_BRAND.MEA : APP_BRAND.MAT);
 
-  const isRequestMenuActive = menus.some((menu) => location.pathname === menu.to);
-  const isFileHandlingActive = fileHandlingMenus.some(
-    (menu) => location.pathname === menu.to
-  );
+  const pathActive = (path) => path && location.pathname === path;
+  const dropdownActive = (node) =>
+    (node.children || []).some((c) => pathActive(c.path));
 
   const canToggle =
     allowedApps.includes(APPS.MAT) && allowedApps.includes(APPS.MEA);
 
-  /** Instant local switch — never wait on backend (hang/401 was blocking the toggle). */
   const handleApplicationSwitch = (target) => {
     if (target === activeApp) return;
     if (!allowedApps.includes(target)) return;
-
     const ok = switchApp(target);
     if (!ok) return;
-
-    // Stay on shared screens (e.g. User Management); otherwise open that app's dashboard
-    const commonPaths = ["/profile-management"];
+    const commonPaths = ["/profileManagement", "/profile-management"];
     if (!commonPaths.includes(location.pathname)) {
       navigate("/", { replace: true });
     }
   };
 
-  const userMgmt = COMMON_PROFILE_LINKS.userManagement;
-  const showUserManagement =
-    userMgmt.roles.includes(user?.role);
+  const visibleNav = (menus || []).filter((m) => m.visible !== false);
+  const visibleProfile = (profileMenus || []).filter((m) => m.visible !== false);
 
   return (
     <div>
@@ -82,14 +89,9 @@ function Navbar({ user, onLogout }) {
             >
               {brand.short}
             </div>
-
             <small
               className="text-muted text-center mt-1"
-              style={{
-                fontSize: "7px",
-                lineHeight: "1.1",
-                width: "90px",
-              }}
+              style={{ fontSize: "7px", lineHeight: "1.1", width: "90px" }}
             >
               {brand.full}
             </small>
@@ -106,129 +108,82 @@ function Navbar({ user, onLogout }) {
 
           <div className="collapse navbar-collapse" id="mainNavbar">
             <ul className="navbar-nav me-auto ms-4" style={{ gap: "12px" }}>
-              <li className="nav-item">
-                <Link
-                  className={`nav-link ${location.pathname === "/"
-                      ? "active fw-semibold text-primary"
-                      : ""
-                    }`}
-                  to="/"
-                >
-                  <FaTachometerAlt className="me-1" />
-                  Dashboard
-                </Link>
-              </li>
-
-              {menus.length > 0 && (
-                <li
-                  className="nav-item dropdown position-relative"
-                  onMouseEnter={() => setRequestOpen(true)}
-                  onMouseLeave={() => setRequestOpen(false)}
-                >
-                  <div
-                    className={`nav-link d-flex align-items-center ${requestOpen || isRequestMenuActive
-                        ? "text-primary fw-semibold"
-                        : ""
-                      }`}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <FaFileInvoiceDollar className="me-1" />
-                    <span>{menusConfig.requestLabel}</span>
-                    <FaChevronDown
-                      className={`ms-2 ${requestOpen ? "rotate-arrow" : ""}`}
-                    />
-                  </div>
-
-                  <ul
-                    className={`dropdown-menu shadow border-0 py-2 ${requestOpen ? "show" : ""
-                      }`}
-                    style={{
-                      minWidth: "280px",
-                      borderRadius: "10px",
-                    }}
-                  >
-                    {menus.map((menu) => (
-                      <li key={menu.to}>
-                        <Link
-                          className={`dropdown-item d-flex align-items-center gap-2 py-1 fs-6 ${location.pathname === menu.to ? "active" : ""
-                            }`}
-                          to={menu.to}
-                          onClick={() => setRequestOpen(false)}
-                        >
-                          <span>{menu.label}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              )}
-
-              {menusConfig.showReports && (
+              {menusLoading && (
                 <li className="nav-item">
-                  <Link
-                    className={`nav-link ${location.pathname === menusConfig.reportsTo
-                        ? "active fw-semibold text-primary"
-                        : ""
-                      }`}
-                    to={menusConfig.reportsTo}
-                  >
-                    <FaFileAlt className="me-1" />
-                    Reports
-                  </Link>
+                  <span className="nav-link text-muted small">Loading menus…</span>
                 </li>
               )}
-
-              {menusConfig.showFileHandling && fileHandlingMenus.length > 0 && (
-                <li
-                  className="nav-item dropdown position-relative"
-                  onMouseEnter={() => setFileHandlingOpen(true)}
-                  onMouseLeave={() => setFileHandlingOpen(false)}
-                >
-                  <div
-                    className={`nav-link d-flex align-items-center ${fileHandlingOpen || isFileHandlingActive
-                        ? "text-primary fw-semibold"
-                        : ""
-                      }`}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <FaFile className="me-1" />
-                    <span>File Handling</span>
-                    <FaChevronDown
-                      className={`ms-2 ${fileHandlingOpen ? "rotate-arrow" : ""}`}
-                    />
-                  </div>
-
-                  <ul
-                    className={`dropdown-menu shadow border-0 py-2 ${fileHandlingOpen ? "show" : ""
-                      }`}
-                    style={{
-                      minWidth: "250px",
-                      borderRadius: "10px",
-                    }}
-                  >
-                    {fileHandlingMenus.map((menu) => (
-                      <li key={menu.to}>
-                        <Link
-                          className={`dropdown-item py-2 ${location.pathname === menu.to ? "active" : ""
-                            }`}
-                          to={menu.to}
-                          onClick={() => setFileHandlingOpen(false)}
-                        >
-                          {menu.label}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
+              {!menusLoading && menusError && visibleNav.length === 0 && (
+                <li className="nav-item">
+                  <span className="nav-link text-danger small" title={menusError}>
+                    Menus unavailable
+                  </span>
                 </li>
               )}
+              {visibleNav.map((item) => {
+                if (item.kind === "dropdown") {
+                  const open = openCode === item.id;
+                  const active = open || dropdownActive(item);
+                  const kids = (item.children || []).filter((c) => c.visible !== false);
+                  if (!kids.length) return null;
+                  return (
+                    <li
+                      key={item.id}
+                      className="nav-item dropdown position-relative"
+                      onMouseEnter={() => setOpenCode(item.id)}
+                      onMouseLeave={() => setOpenCode(null)}
+                    >
+                      <div
+                        className={`nav-link d-flex align-items-center ${
+                          active ? "text-primary fw-semibold" : ""
+                        }`}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <MenuIcon name={iconForMenu(item)} />
+                        <span>{item.label}</span>
+                        <FaChevronDown className={`ms-2 ${open ? "rotate-arrow" : ""}`} />
+                      </div>
+                      <ul
+                        className={`dropdown-menu shadow border-0 py-2 ${open ? "show" : ""}`}
+                        style={{ minWidth: "280px", borderRadius: "10px" }}
+                      >
+                        {kids.map((child) => (
+                          <li key={child.id}>
+                            <Link
+                              className={`dropdown-item d-flex align-items-center gap-2 py-1 fs-6 ${
+                                pathActive(child.path) ? "active" : ""
+                              }`}
+                              to={child.path}
+                              onClick={() => setOpenCode(null)}
+                            >
+                              <span>{child.label}</span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  );
+                }
+
+                return (
+                  <li key={item.id} className="nav-item">
+                    <Link
+                      className={`nav-link ${
+                        pathActive(item.path) ? "active fw-semibold text-primary" : ""
+                      }`}
+                      to={item.path || "/"}
+                    >
+                      <MenuIcon name={iconForMenu(item)} />
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
 
             {canToggle && (
               <div className="d-flex align-items-center me-3">
-                <AppToggle
-                  activeApp={activeApp}
-                  onSwitch={handleApplicationSwitch}
-                />
+                <AppToggle activeApp={activeApp} onSwitch={handleApplicationSwitch} />
               </div>
             )}
 
@@ -272,15 +227,16 @@ function Navbar({ user, onLogout }) {
                     Profile Information
                   </button>
 
-                  {showUserManagement && (
+                  {visibleProfile.map((pm) => (
                     <Link
+                      key={pm.id}
                       className="dropdown-item d-flex align-items-center gap-2"
-                      to={userMgmt.to}
+                      to={pm.path}
                       onClick={() => setProfileOpen(false)}
                     >
-                      <FaUsers />
-                      {userMgmt.label}
-                      {user?.isAdmin && (
+                      <MenuIcon name={iconForMenu(pm)} className="" />
+                      {pm.label}
+                      {user?.isAdmin && /user management/i.test(pm.label || "") && (
                         <span
                           className="badge bg-primary ms-auto"
                           style={{ fontSize: "10px" }}
@@ -289,7 +245,7 @@ function Navbar({ user, onLogout }) {
                         </span>
                       )}
                     </Link>
-                  )}
+                  ))}
                   <hr className="dropdown-divider my-1" />
                   <button
                     className="dropdown-item text-danger d-flex align-items-center gap-2"
@@ -308,72 +264,56 @@ function Navbar({ user, onLogout }) {
       {showProfileModal && (
         <div
           className="modal show d-block"
-          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
         >
           <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow">
+            <div className="modal-content" style={{ borderRadius: "12px" }}>
               <div className="modal-header">
-                <h5 className="modal-title">Profile Information</h5>
+                <h5 className="modal-title d-flex align-items-center gap-2">
+                  <FaUserCircle /> Profile Information
+                </h5>
                 <button
                   type="button"
                   className="btn-close"
                   onClick={() => setShowProfileModal(false)}
                 />
               </div>
-
               <div className="modal-body">
-                <div className="text-center mb-4">
-                  <FaUserCircle size={75} className="text-primary" />
+                <div className="text-center mb-3">
+                  <div
+                    className="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center"
+                    style={{ width: 64, height: 64 }}
+                  >
+                    <FaUser size={28} />
+                  </div>
                   <h5 className="mt-2 mb-0">{user?.displayName || "-"}</h5>
+                  <div className="text-muted small">{user?.role || "-"}</div>
                 </div>
-
-                <div className="row g-3">
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">User ID</small>
-                    <div className="fw-semibold">{user?.username || "-"}</div>
+                <div className="row g-2 small">
+                  <div className="col-5 text-muted">Username / EIN</div>
+                  <div className="col-7 fw-semibold">{user?.ein || user?.username || "-"}</div>
+                  <div className="col-5 text-muted">Display Name</div>
+                  <div className="col-7 fw-semibold">{user?.displayName || "-"}</div>
+                  <div className="col-5 text-muted">Email</div>
+                  <div className="col-7 fw-semibold">{user?.email || "-"}</div>
+                  <div className="col-5 text-muted">SOL</div>
+                  <div className="col-7 fw-semibold">
+                    {user?.sol || "-"}
+                    {user?.solName ? ` — ${user.solName}` : ""}
                   </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">Name</small>
-                    <div className="fw-semibold">{user?.displayName || "-"}</div>
+                  <div className="col-5 text-muted">Region / Zone</div>
+                  <div className="col-7 fw-semibold">
+                    {[user?.regionName, user?.zoneName].filter(Boolean).join(" / ") || "-"}
                   </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">Email</small>
-                    <div className="fw-semibold">{user?.email || "-"}</div>
-                  </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">Role</small>
-                    <div>
-                      <span className="badge bg-primary">{user?.role || "-"}</span>
-                      {user?.isAdmin && (
-                        <span className="badge bg-info text-dark ms-1">Admin</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">Active Application</small>
-                    <div className="fw-semibold">{activeApp}</div>
-                  </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">SOL ID</small>
-                    <div className="fw-semibold">{user?.sol || "-"}</div>
-                  </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">SOL Name</small>
-                    <div className="fw-semibold">{user?.solName || "-"}</div>
-                  </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">Region Name</small>
-                    <div className="fw-semibold">{user?.regionName || "-"}</div>
-                  </div>
-                  <div className="col-md-6">
-                    <small className="text-muted d-block">Zone Name</small>
-                    <div className="fw-semibold">{user?.zoneName || "-"}</div>
-                  </div>
+                  <div className="col-5 text-muted">Active App</div>
+                  <div className="col-7 fw-semibold">{activeApp}</div>
                 </div>
               </div>
               <div className="modal-footer">
                 <button
-                  className="btn btn-primary"
+                  type="button"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => setShowProfileModal(false)}
                 >
                   Close

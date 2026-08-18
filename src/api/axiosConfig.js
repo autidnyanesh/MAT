@@ -8,6 +8,9 @@ import {
 // ── Access token stored in MEMORY only (never localStorage/sessionStorage) ──
 let accessToken = null;
 
+/** Shared so React StrictMode does not fire /api/refresh twice on boot. */
+let sessionRestorePromise = null;
+
 export const setAccessToken = (token) => {
   accessToken = token;
 };
@@ -18,14 +21,32 @@ export const clearAccessToken = () => {
   accessToken = null;
 };
 
+export function resetSessionRestoreCache() {
+  sessionRestorePromise = null;
+}
+
+/**
+ * Empty base URL → same-origin via CRA "proxy" (cookies work on F5).
+ * Set REACT_APP_API_URL only when API is on another deployed host.
+ */
+function apiBaseUrl() {
+  const v = process.env.REACT_APP_API_URL;
+  if (v == null || String(v).trim() === "") return "";
+  return String(v).trim().replace(/\/$/, "");
+}
+
+function refreshUrl() {
+  const base = apiBaseUrl();
+  return base ? `${base}/api/refresh` : "/api/refresh";
+}
+
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8081",
+  baseURL: apiBaseUrl(),
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
 });
-console.log("AXIOS BASE URL =", api.defaults.baseURL);
 
 function maybeDecrypt(payload) {
   if (
@@ -39,6 +60,44 @@ function maybeDecrypt(payload) {
   return payload;
 }
 
+function readCsrfToken() {
+  const raw = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("XSRF-TOKEN="))
+    ?.split("=")[1];
+  return raw ? decodeURIComponent(raw) : null;
+}
+
+function isAuthUrl(url = "") {
+  return (
+    url.includes("/api/refresh") ||
+    url.includes("/api/login") ||
+    url.includes("/api/logout") ||
+    url.includes("/api/auth/captcha")
+  );
+}
+
+/**
+ * One shared POST /api/refresh for page-load restore.
+ * Uses api instance so response decrypt + credentials match other calls.
+ */
+export function restoreSession() {
+  if (!sessionRestorePromise) {
+    sessionRestorePromise = api
+      .post("/api/refresh", {})
+      .then((res) => res.data)
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[MAT] session restore failed",
+          err?.response?.status || err?.message
+        );
+        return null;
+      });
+  }
+  return sessionRestorePromise;
+}
+
 // ── Request: Bearer + CSRF + encrypt body ───────────────────────────────────
 api.interceptors.request.use(
   (config) => {
@@ -46,11 +105,7 @@ api.interceptors.request.use(
       config.headers["Authorization"] = `Bearer ${accessToken}`;
     }
 
-    const csrfToken = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("XSRF-TOKEN="))
-      ?.split("=")[1];
-
+    const csrfToken = readCsrfToken();
     if (
       csrfToken &&
       ["post", "put", "delete", "patch"].includes(config.method)
@@ -64,7 +119,6 @@ api.interceptors.request.use(
       ["post", "put", "patch", "delete"].includes(config.method) &&
       !config.headers?.["X-Skip-Payload-Encryption"]
     ) {
-      // Avoid double-wrapping
       if (!(typeof config.data === "object" && config.data.data && config.data.hmac !== undefined)) {
         config.data = encryptPayload(config.data);
       }
@@ -102,7 +156,14 @@ api.interceptors.response.use(
     }
 
     const originalRequest = error.config;
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+    const status = error.response?.status;
+    const url = originalRequest?.url || "";
+
+    if (status === 401 && isAuthUrl(url)) {
+      return Promise.reject(error);
+    }
+
+    if (status === 401 && originalRequest && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -118,14 +179,9 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshBody = isPayloadEncryptionEnabled() ? encryptPayload({}) : {};
-        const response = await axios.post(
-          `${process.env.REACT_APP_API_URL || api.defaults.baseURL}/api/refresh`,
-          refreshBody,
-          { withCredentials: true }
-        );
-        const payload = maybeDecrypt(response.data);
-        const newToken = payload?.accessToken;
+        const response = await api.post("/api/refresh", {});
+        const newToken = response.data?.accessToken;
+        if (!newToken) throw new Error("No access token from refresh");
         setAccessToken(newToken);
         processQueue(null, newToken);
         originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
@@ -133,6 +189,7 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         clearAccessToken();
+        resetSessionRestoreCache();
         window.dispatchEvent(new Event("session-expired"));
         return Promise.reject(refreshError);
       } finally {

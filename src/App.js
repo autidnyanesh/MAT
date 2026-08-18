@@ -4,7 +4,6 @@ import {
   Routes,
   Route,
   Navigate,
-  useNavigate,
 } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/guards/ProtectedRoute";
@@ -18,20 +17,14 @@ import { renderMeaRoutes } from "./routes/MeaRoutes";
 import { renderCommonRoutes } from "./routes/CommonRoutes";
 import { ALL_ROLES } from "./config/roles";
 import { useAuth } from "./context/AuthContext";
-import { APPS, useApplication } from "./context/ApplicationContext";
+import { APPS, ACTIVE_APP_STORAGE_KEY, useApplication } from "./context/ApplicationContext";
 import "./styles/main.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
 function AppShell() {
-  const navigate = useNavigate();
   const { user, theme, setTheme, logout } = useAuth();
   const { activeApp } = useApplication();
   const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
-
-  useEffect(() => {
-    navigate("/", { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useSessionTimeout(logout, () => setShowTimeoutWarning(true));
 
@@ -78,7 +71,7 @@ function AppShell() {
 }
 
 function App() {
-  const { user, login, theme, authPage, setAuthPage } = useAuth();
+  const { user, login, theme, authPage, setAuthPage, booting } = useAuth();
   const { setActiveApp, setAllowedApps, resetApplication } = useApplication();
 
   const handleLogin = (userData) => {
@@ -93,14 +86,47 @@ function App() {
     login(userData);
   };
 
+  // Keep ApplicationContext in sync on login, F5 restore, and logout.
+  // Previously restore only set AuthContext.user — activeApp/allowedApps
+  // could stay stale (sessionStorage vs server profile mismatch).
   useEffect(() => {
-    if (!user) resetApplication();
-  }, [user, resetApplication]);
+    if (booting) return;
+
+    if (!user) {
+      resetApplication();
+      return;
+    }
+
+    const apps =
+      Array.isArray(user.allowedApps) && user.allowedApps.length
+        ? user.allowedApps.filter((a) => a === APPS.MAT || a === APPS.MEA)
+        : [APPS.MAT, APPS.MEA];
+    const allowed = apps.length ? apps : [APPS.MAT];
+    setAllowedApps(allowed);
+
+    let preferred = null;
+    try {
+      preferred = sessionStorage.getItem(ACTIVE_APP_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (preferred !== APPS.MAT && preferred !== APPS.MEA) {
+      preferred = user.activeApp === APPS.MEA ? APPS.MEA : APPS.MAT;
+    }
+    if (!allowed.includes(preferred)) {
+      preferred = allowed.includes(APPS.MAT) ? APPS.MAT : allowed[0];
+    }
+    setActiveApp(preferred);
+  }, [user, booting, resetApplication, setAllowedApps, setActiveApp]);
 
   return (
     <BrowserRouter>
       <div className={`app ${theme}`}>
-        {!user ? (
+        {booting ? (
+          <div className="d-flex justify-content-center align-items-center min-vh-100 text-muted">
+            loading…
+          </div>
+        ) : !user ? (
           authPage === "login" ? (
             <Login
               onLogin={handleLogin}

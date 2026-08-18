@@ -234,7 +234,7 @@ const ApprovalQueue = () => {
                                     <td>{row.gateTxnId || "—"}</td>
                                     <td>
                                         {row.documentName
-                                            ? <span className="text-primary" style={{ cursor: "pointer" }} onClick={() => console.log("Download:", row.documentName)}>
+                                            ? <span className="text-primary" style={{ cursor: "pointer" }} onClick={() => { /* download via authenticated API later */ }}>
                                                 <FaFileAlt className="me-1" />View
                                             </span>
                                             : <span className="text-muted">—</span>}

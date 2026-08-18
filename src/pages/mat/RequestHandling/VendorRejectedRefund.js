@@ -102,7 +102,7 @@ const VendorRejectedRefund = () => {
     };
 
     const openDocument = (requestId) => {
-        console.log("View reference document for", requestId);
+        void requestId; // wire authenticated document download API later
     };
 
     const generateReversal = async () => {

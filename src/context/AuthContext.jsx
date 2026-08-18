@@ -6,7 +6,12 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { clearAccessToken } from "../api/axiosConfig";
+import api, {
+  clearAccessToken,
+  resetSessionRestoreCache,
+  restoreSession,
+  setAccessToken,
+} from "../api/axiosConfig";
 
 const AuthContext = createContext(null);
 
@@ -14,18 +19,65 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [theme, setTheme] = useState("light");
   const [authPage, setAuthPage] = useState("login");
+  const [booting, setBooting] = useState(true);
 
   const login = useCallback((userData) => {
-    setUser(userData);
+    // Never keep accessToken in React state (memory via setAccessToken only)
+    if (!userData || typeof userData !== "object") {
+      setUser(null);
+      return;
+    }
+    const { accessToken: _ignore, ...profile } = userData;
+    setUser({
+      ...profile,
+      isAdmin: Boolean(profile.isAdmin),
+      activeApp: profile.activeApp === "MEA" ? "MEA" : "MAT",
+      allowedApps: profile.allowedApps || ["MAT", "MEA"],
+    });
   }, []);
 
   const logout = useCallback(() => {
-    clearAccessToken();
-    setUser(null);
-    setAuthPage("login");
+    api
+      .post("/api/logout", {})
+      .catch(() => {})
+      .finally(() => {
+        clearAccessToken();
+        resetSessionRestoreCache();
+        setUser(null);
+        setAuthPage("login");
+      });
   }, []);
 
-  // Axios interceptor fires this when the session expires (401).
+  // One shared restore call (survives React StrictMode double-mount in dev)
+  useEffect(() => {
+    let cancelled = false;
+
+    restoreSession()
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.accessToken) {
+          const { accessToken, ...profile } = data;
+          setAccessToken(accessToken);
+          setUser({
+            ...profile,
+            isAdmin: Boolean(profile.isAdmin),
+            activeApp: profile.activeApp === "MEA" ? "MEA" : "MAT",
+            allowedApps: profile.allowedApps || ["MAT", "MEA"],
+          });
+        } else {
+          // No session — stay on login; do NOT call /logout (would clear a valid cookie race)
+          clearAccessToken();
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBooting(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const handler = () => logout();
     window.addEventListener("session-expired", handler);
@@ -37,12 +89,13 @@ export function AuthProvider({ children }) {
       user,
       login,
       logout,
+      booting,
       theme,
       setTheme,
       authPage,
       setAuthPage,
     }),
-    [user, login, logout, theme, authPage]
+    [user, login, logout, booting, theme, authPage]
   );
 
   return (

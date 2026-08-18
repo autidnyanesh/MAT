@@ -13,18 +13,19 @@ export function renderCommonRoutes(user) {
     <>
       <Route
         path="/user-approval-queue"
-        element={<Navigate to="/profile-management" replace />}
+        element={<Navigate to="/profileManagement" replace />}
       />
       <Route
-        path="/profile-management"
+        path="/profileManagement"
         element={
           <ProtectedRoute user={user} allowedRoles={[ROLES.DCO]}>
             <ProfileManagement user={user} />
           </ProtectedRoute>
         }
       />
-      <Route path="/delete-user" element={<Navigate to="/profile-management" replace />} />
-      <Route path="/activate-user" element={<Navigate to="/profile-management" replace />} />
+      <Route path="/profile-management" element={<Navigate to="/profileManagement" replace />} />
+      <Route path="/delete-user" element={<Navigate to="/profileManagement" replace />} />
+      <Route path="/activate-user" element={<Navigate to="/profileManagement" replace />} />
     </>
   );
 }

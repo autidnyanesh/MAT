@@ -6,12 +6,12 @@ import { APPS } from "../context/ApplicationContext";
 import { ALL_ROLES, ROLES } from "../config/roles";
 import {
   MatReport,
-  FinalApproval,
+  // FinalApproval,
   SFTPFileHandling,
   ARNFileHandling,
   RaisedRequest,
   MyRequest,
-  ApprovalQueue,
+  // ApprovalQueue,
   ArchivalEnquiry,
   ReferredBRequest,
   PullRequest,
@@ -37,51 +37,47 @@ export function renderMatRoutes(user) {
   return (
     <>
       <Route
-        path="/raise-request"
+        path="/raiseRequest"
         element={matPage(user, [ROLES.BU], <RaisedRequest />)}
       />
       <Route
-        path="/vendor-rejected-refund"
+        path="/vendorRejectRefund"
         element={matPage(user, [ROLES.BU, ROLES.DCO], <VendorRejectedRefund />)}
       />
       <Route
-        path="/vendor-rejected-resumbit"
+        path="/vendorRejectResumbit"
         element={matPage(user, [ROLES.BU, ROLES.DCO], <VendorRejectReSumbit />)}
       />
       <Route
-        path="/my-request"
+        path="/myRequest"
         element={matPage(user, [ROLES.BU], <MyRequest />)}
       />
       <Route
-        path="/referred-request"
+        path="/referredRequest"
         element={matPage(user, [ROLES.BU], <ReferredBRequest />)}
       />
       <Route
-        path="/pull-request"
+        path="/pullRequest"
         element={matPage(user, ALL_ROLES, <PullRequest />)}
       />
       <Route
         path="/rejected"
         element={matPage(user, [ROLES.BU, ROLES.DCO], <Rejected />)}
       />
-      <Route
-        path="/approval-queue"
+      {/* <Route
+        path="/approvalQueue"
         element={matPage(user, [ROLES.BU], <ApprovalQueue />)}
-      />
+      /> */}
       <Route
-        path="/dco-approval-queue"
-        element={matPage(user, [ROLES.DCO], <DCOApprovalQueue />)}
+        path="/approvalQueue"
+        element={matPage(user, [ROLES.BU, ROLES.DCO], <DCOApprovalQueue />)}
       />
       <Route
         path="/rejection-after-txn"
         element={matPage(user, [ROLES.DCO], <RejectionAfterTransaction />)}
       />
       <Route
-        path="/final-approval"
-        element={matPage(user, [ROLES.AGM, ROLES.DGM], <FinalApproval />)}
-      />
-      <Route
-        path="/archival-enquiry"
+        path="/archivalEnquiry"
         element={matPage(user, [ROLES.BU, ROLES.DCO], <ArchivalEnquiry />)}
       />
       <Route
@@ -89,11 +85,11 @@ export function renderMatRoutes(user) {
         element={matPage(user, ALL_ROLES, <MatReport />)}
       />
       <Route
-        path="/sftp-upload"
+        path="/sftpUpload"
         element={matPage(user, [ROLES.DCO], <SFTPFileHandling />)}
       />
       <Route
-        path="/arn-handling"
+        path="/arnHandling"
         element={matPage(user, [ROLES.DCO], <ARNFileHandling />)}
       />
     </>
