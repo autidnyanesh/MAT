@@ -63,7 +63,14 @@ function Navbar({ user, onLogout }) {
   };
 
   const visibleNav = (menus || []).filter((m) => m.visible !== false);
-  const visibleProfile = (profileMenus || []).filter((m) => m.visible !== false);
+  const visibleProfile = (profileMenus || []).filter((m) => {
+    if (m.visible === false) return false;
+    // User Management: DCO admin only (BU / normal DCO never see it)
+    if (/user management|profilemanagement|profile-management/i.test(`${m.label} ${m.path}`)) {
+      return user?.role === "DCO" && user?.isAdmin === true;
+    }
+    return true;
+  });
 
   return (
     <div>

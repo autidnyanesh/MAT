@@ -6,6 +6,7 @@ import {
 } from "react-icons/fa";
 import AlertModal from "../../components/AlertModel";
 import "../../styles/tableAlign.css";
+import api from "../../api/axiosConfig";
 
 // ── New-user type options (SRS: Add User dropdown) ─────────────────────────
 const NEW_USER_TYPES = [
@@ -98,6 +99,7 @@ const generateReqId = () => `UREQ${Date.now().toString().slice(-6)}`;
 function ProfileManagement({ user }) {
 
   const role = user?.role;
+  const ein = user?.ein;
   const isMaker = role === "DCO";
   const isChecker = role === "DCOC";
   const isAdmin = user?.isAdmin === true;
@@ -110,6 +112,24 @@ function ProfileManagement({ user }) {
   // (Two people logged in on two different machines — one as Maker, one as
   // Checker — would need the real API plus polling/refresh for this; see
   // the TODO near the API calls below.)
+
+  // try {
+  //   const response = await api.get("api/userManagement", {
+  //     params: { ein: user }
+  //   });
+  //   const data = response.data;
+  //   if (!data) {
+  //     console.log("response data" + data);
+  //     throw new Error("Not get any response");
+
+  //   }
+  // }
+  // catch (err) {
+  //   console.warn("[MAT] menus API failed", err?.response?.status || err?.message);
+  // }
+  // finally {
+
+  // }
   const [users, setUsers] = useState([
     {
       ein: "100001",
@@ -364,12 +384,8 @@ function ProfileManagement({ user }) {
   const totalPages = Math.ceil(activeList.length / recordsPerPage);
   const pageData = activeList.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
 
-  // ── Anyone other than DCO (Maker) or DCOC (Checker) has no business here.
-  // Navbar already only shows the "User Management" link to those two roles,
-  // and ProtectedRoute (allowedRoles={[ROLES.DCO, ROLES.DCOC]}) already
-  // blocks the route itself — this is just cheap insurance in case that
-  // ever changes or this component gets reused on an unguarded route.
-  if (!isMaker && !isChecker) {
+  // User Management is DCO admin only (IS_ADMIN = Y).
+  if (!isMaker || !isAdmin) {
     return null;
   }
 

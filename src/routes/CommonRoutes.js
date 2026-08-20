@@ -18,7 +18,7 @@ export function renderCommonRoutes(user) {
       <Route
         path="/profileManagement"
         element={
-          <ProtectedRoute user={user} allowedRoles={[ROLES.DCO]}>
+          <ProtectedRoute user={user} allowedRoles={[ROLES.DCO]} requireAdmin>
             <ProfileManagement user={user} />
           </ProtectedRoute>
         }
