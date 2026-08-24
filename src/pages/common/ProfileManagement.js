@@ -13,43 +13,20 @@ const NEW_USER_TYPES = [
   { value: "DCO_USER", label: "DCO User" },
   { value: "INTERNAL_AUDITOR", label: "Internal Auditor" },
   { value: "EXTERNAL_AUDITOR", label: "External Auditor" },
-  { value: "HO_DBD", label: "HO/DBD" },
-  { value: "TEMP_USER", label: "Temp User" },
+  { value: "TEMP_USER", label: "Temp User BOA" },
+  { value: "HO_DBD", label: "Temp User HO/DBD/RO/ZO/BU/Other Business Units/HO-FAD" },
 ];
 
 // Role label shown in the table for each new-user type
 const ROLE_LABELS = {
-  DCO_USER: "DCO",
+  DCO_USER: "DCO User",
   INTERNAL_AUDITOR: "Internal Auditor",
   EXTERNAL_AUDITOR: "External Auditor",
-  HO_DBD: "HO/DBD",
-  TEMP_USER: "Temp User",
+  HO_DBD: "Temp User HO/DBD/RO/ZO/BU/Other Business Units/HO-FAD",
+  TEMP_USER: "Temp User BOA",
 };
 
-// Badge colour for each request type, used in the Checker queue
-const REQUEST_TYPE_BADGE = {
-  ADD: "bg-primary",
-  ACTIVATE: "bg-success",
-  DEACTIVATE: "bg-warning text-dark",
-  DELETE: "bg-danger",
-  MAKE_ADMIN: "bg-info text-dark",
-  REVOKE_ADMIN: "bg-secondary",
-};
-
-const REQUEST_TYPE_LABEL = {
-  ADD: "Add",
-  ACTIVATE: "Activate",
-  DEACTIVATE: "Deactivate",
-  DELETE: "Delete",
-  MAKE_ADMIN: "Make Admin",
-  REVOKE_ADMIN: "Revoke Admin",
-};
-
-// ── Maker-checker status labels ─────────────────────────────────────────────
-// A user always has an underlying status (ACTIVE/INACTIVE), but while a
-// maker request (Add/Activate/Deactivate/Delete) is awaiting DCO-Checker
-// approval, the table shows the pending state instead so it's obvious
-// nothing has actually taken effect yet.
+// ── Status labels (pending until another DCO admin approves) ─────────────────
 const getStatusDisplay = (user) => {
   const requestType = user.pendingRequest?.requestType;
   if (requestType === "ADD" || requestType === "ACTIVATE") {
@@ -85,51 +62,31 @@ const formatDisplayDate = (iso) => {
 // Mock request-ID generator — the real backend will assign this.
 const generateReqId = () => `UREQ${Date.now().toString().slice(-6)}`;
 
-// ── Role source ─────────────────────────────────────────────────────────────
-// `user` is the exact same object Navbar already receives (set once at
-// login in Login.js's onLogin, held in App state, passed down as a prop).
-// Its `role` field carries the real role codes from your DUMMY_USERS /
-// backend: "DCO" is the Maker, "DCOC" is the Checker. Whoever renders this
-// route needs to pass that same prop:
-//
-//   <Route path="/profile-management" element={<ProfileManagement user={user} />} />
-//
-// No dev switcher anymore — the view you get is entirely driven by who is
-// actually logged in.
+/** True if pending request was raised by the logged-in admin (cannot self-approve). */
+const isRaisedByCurrentAdmin = (pendingRequest, currentEin) => {
+  if (!pendingRequest || !currentEin) return false;
+  const by = String(pendingRequest.requestedByEin || pendingRequest.requestedBy || "").trim();
+  if (!by) return false;
+  return by === currentEin || by.startsWith(`${currentEin} `) || by.startsWith(`${currentEin}-`);
+};
+
+/**
+ * User Management — DCO admins only.
+ * Any DCO admin can raise Add/Activate/Deactivate/Delete/Admin requests.
+ * Another DCO admin approves via Approve/Reject in the same User List Action column.
+ */
 function ProfileManagement({ user }) {
 
   const role = user?.role;
   const ein = user?.ein;
-  const isMaker = role === "DCO";
-  const isChecker = role === "DCOC";
   const isAdmin = user?.isAdmin === true;
+  const canAccess = role === "DCO" && isAdmin;
 
   // ── Single source of truth ────────────────────────────────────────────────
-  // Every user row optionally carries a `pendingRequest` — that's what makes
-  // the Maker table and the Checker queue two views over the SAME data
-  // instead of two arrays that can drift out of sync. Approve/Reject here
-  // mutates this same state, so the Maker's screen reflects it immediately.
-  // (Two people logged in on two different machines — one as Maker, one as
-  // Checker — would need the real API plus polling/refresh for this; see
-  // the TODO near the API calls below.)
+  // Every user row optionally carries a `pendingRequest`. Approve/Reject appear
+  // in Action when pending was raised by another admin (no self-approval).
 
-  // try {
-  //   const response = await api.get("api/userManagement", {
-  //     params: { ein: user }
-  //   });
-  //   const data = response.data;
-  //   if (!data) {
-  //     console.log("response data" + data);
-  //     throw new Error("Not get any response");
-
-  //   }
-  // }
-  // catch (err) {
-  //   console.warn("[MAT] menus API failed", err?.response?.status || err?.message);
-  // }
-  // finally {
-
-  // }
+  // const [users, setUsers] = useState([]);
   const [users, setUsers] = useState([
     {
       ein: "100001",
@@ -201,57 +158,69 @@ function ProfileManagement({ user }) {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset paging/search if the logged-in user ever changes (e.g. logout/
-  // login as someone else in the same session) so stale filters don't
-  // carry over.
   useEffect(() => {
+    loadUser();
     setSearch("");
     setCurrentPage(1);
-  }, [role]);
+  }, [role, ein]);
 
-  // ── Maker-side modals ──────────────────────────────────────────────────────
+  // ── Action modals ──────────────────────────────────────────────────────────
   const [submitting, setSubmitting] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null); // { type, user }
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-
-  // ── Checker-side modals ────────────────────────────────────────────────────
+  const [loading, setLoading] = useState(true);
   const [checkerAction, setCheckerAction] = useState(null); // { decision, user }
   const [viewRequestUser, setViewRequestUser] = useState(null);
-
   const [alertConfig, setAlertConfig] = useState({ show: false, title: "", message: "", type: "success" });
 
   const recordsPerPage = 5;
 
-  // axios.get("/api/profile-management")
-  //    .then(res => setUsers(res.data.users));
-  // TODO once the API is live: poll GET /api/user-management/requests (or a
-  // websocket/SSE push) on an interval so the Checker sees new Maker
-  // submissions — and the Maker sees Checker decisions — without a manual
-  // page refresh, since separate logins won't share this component's state.
+  async function loadUser(params) {
+    let cancelled = false;
+    setLoading(true);
+    try {
+      const res = await api.get("/api/userManagement");
+      const data = res.data?.users ?? res.data;
+      if (!cancelled) {
+        console.log("res data", data);
+        setUsers(Array.isArray(data) ? data : []);
+      }
+    }
+    catch (err) {
+      console.warn("[MAT] menus API failed", err?.res?.status || err?.message);
+      if (!cancelled) {
+        setUsers([]);
+      }
+    }
+    finally {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }
+  }
 
   // ── Maker: raise a request (Add / Activate / Deactivate / Delete) ────────
-  const submitMakerRequest = async (type, targetUser, remark) => {
+  const submitMakerRequest = async (type, targetUser) => {
     setSubmitting(true);
     try {
       // await api.post("/api/user-management/request", {
       //   requestType: type,       // ADD | ACTIVATE | DEACTIVATE | DELETE
       //   ein: targetUser.ein,
       //   userType: targetUser.userType, // only present for ADD
-      //   fromDate: targetUser.fromDate, // mandatory for ADD when userType !== DCO_USER
-      //   toDate: targetUser.toDate,     // mandatory for ADD when userType !== DCO_USER
-      //   remark,
+      //   fromDate: targetUser.fromDate,
+      //   toDate: targetUser.toDate,
       // });
 
-      // Simulated success — remove once the endpoint above is live.
       await new Promise((resolve) => setTimeout(resolve, 600));
 
       const requestedOn = formatDisplayDate(new Date().toISOString().slice(0, 10));
       const pendingRequest = {
         reqId: generateReqId(),
         requestType: type,
-        requestedBy: `${user?.username || "DCO"} - ${user?.displayName || "DCO Maker"}`,
+        requestedBy: ein || user?.username || "",
+        requestedByEin: ein || "",
         requestedOn,
-        makerRemark: remark,
+        makerRemark: "",
       };
 
       if (type === "ADD") {
@@ -264,7 +233,7 @@ function ProfileManagement({ user }) {
             role: ROLE_LABELS[targetUser.userType] || targetUser.userType,
             sol: targetUser.sol || "-",
             validDate: targetUser.toDate ? formatDisplayDate(targetUser.toDate) : "Permanent",
-            status: "INACTIVE", // not live until the DCO-Checker approves
+            status: "INACTIVE", // live only after another admin approves
             pendingRequest,
           },
         ]);
@@ -279,7 +248,7 @@ function ProfileManagement({ user }) {
       setAlertConfig({
         show: true,
         title: "Request Submitted",
-        message: `${type.charAt(0) + type.slice(1).toLowerCase()} request for EIN ${targetUser.ein} has been sent to the DCO-Checker for approval.`,
+        message: `${type.charAt(0) + type.slice(1).toLowerCase()} request for EIN ${targetUser.ein} has been sent for approval by another DCO admin.`,
         type: "success",
       });
     } catch {
@@ -295,13 +264,12 @@ function ProfileManagement({ user }) {
   };
 
   // ── Checker: approve or reject a pending request ──────────────────────────
-  const resolveCheckerRequest = async (decision, targetUser, remark) => {
+  const resolveCheckerRequest = async (decision, targetUser) => {
     setSubmitting(true);
     try {
       // await api.post("/api/user-approval/action", {
       //   reqId: targetUser.pendingRequest.reqId,
       //   decision,   // APPROVE | REJECT
-      //   remark,
       // });
 
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -359,8 +327,8 @@ function ProfileManagement({ user }) {
     }
   };
 
-  // ── Maker table data ───────────────────────────────────────────────────────
-  const filteredMakerUsers = useMemo(() => {
+  // Single user list (no Approval Queue tab)
+  const filteredUsers = useMemo(() => {
     if (search.trim() === "") return users;
     return users.filter((u) =>
       [u.ein, u.aDate, u.name, u.role, u.sol, u.validDate, getStatusDisplay(u).label]
@@ -368,24 +336,10 @@ function ProfileManagement({ user }) {
     );
   }, [users, search]);
 
-  // ── Checker queue data ─────────────────────────────────────────────────────
-  const pendingUsers = useMemo(() => users.filter((u) => u.pendingRequest), [users]);
+  const totalPages = Math.ceil(filteredUsers.length / recordsPerPage) || 1;
+  const pageData = filteredUsers.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
 
-  const filteredPendingUsers = useMemo(() => {
-    if (search.trim() === "") return pendingUsers;
-    return pendingUsers.filter((u) => {
-      const r = u.pendingRequest;
-      return [u.ein, u.name, u.role, r.requestType, r.requestedBy, r.requestedOn]
-        .some((value) => String(value ?? "").toLowerCase().includes(search.toLowerCase()));
-    });
-  }, [pendingUsers, search]);
-
-  const activeList = isChecker ? filteredPendingUsers : filteredMakerUsers;
-  const totalPages = Math.ceil(activeList.length / recordsPerPage);
-  const pageData = activeList.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
-
-  // User Management is DCO admin only (IS_ADMIN = Y).
-  if (!isMaker || !isAdmin) {
+  if (!canAccess) {
     return null;
   }
 
@@ -397,16 +351,15 @@ function ProfileManagement({ user }) {
             <ol className="breadcrumb mb-0">
               <li className="breadcrumb-item text-muted">User Management</li>
               <li className="breadcrumb-item active fw-semibold" aria-current="page">
-                {isChecker ? "User Approval Queue" : "Profile Management"}
+                Profile Management
               </li>
             </ol>
           </nav>
         </div>
-        <div className="card-body">
+        <div className="card-body pb-2">
           <div className="row align-items-end">
             <div className="col-md-4">
               <label className="form-label">Search</label>
-
               <div className="position-relative">
                 <FaSearch
                   className="position-absolute"
@@ -428,266 +381,198 @@ function ProfileManagement({ user }) {
                     setCurrentPage(1);
                   }}
                   style={{ paddingLeft: "38px" }}
-
                 />
               </div>
-
             </div>
           </div>
         </div>
 
-
-        {isChecker ? (
-
-          // ────────────────────────────────────────────────────────────────
-          // DCO-CHECKER VIEW — pending requests only, Approve/Reject
-          // ────────────────────────────────────────────────────────────────
-          <div className="card shadow-sm border-0">
-
-            <div className="alert alert-warning py-1 m-2 mb-0" style={{ fontSize: "13px" }}>
-              Displaying pending user creation, activation, deactivation and deletion requests raised by the DCO Maker, awaiting your approval.
-            </div>
-
-            <div className="table-responsive">
-              <table className="table modern-table align-middle mb-0">
-                <thead className="table-light">
-                  <tr>
-                    <th>Request ID</th>
-                    <th>Type</th>
-                    <th>EIN</th>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>SOL</th>
-                    <th>Requested By</th>
-                    <th>Requested On</th>
-                    <th width="110">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageData.length > 0 ? pageData.map((u) => {
-                    const req = u.pendingRequest;
-                    return (
-                      <tr key={u.ein}>
-                        <td>
-                          <span
-                            className="text-primary fw-semibold"
-                            style={{ cursor: "pointer", textDecoration: "underline" }}
-                            onClick={() => setViewRequestUser(u)}
-                          >
-                            {req.reqId}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`badge ${REQUEST_TYPE_BADGE[req.requestType] || "bg-secondary"}`}>
-                            {REQUEST_TYPE_LABEL[req.requestType] || req.requestType}
-                          </span>
-                        </td>
-                        <td>{u.ein}</td>
-                        <td>{u.name}</td>
-                        <td>{u.role}</td>
-                        <td>{u.sol}</td>
-                        <td>{req.requestedBy}</td>
-                        <td>{req.requestedOn}</td>
-                        <td>
-                          <div className="d-flex gap-1 justify-content-center">
-                            <button
-                              title="Approve"
-                              className="btn btn-success btn-sm p-0"
-                              style={{ width: 26, height: 26, borderRadius: "6px" }}
-                              onClick={() => setCheckerAction({ decision: "APPROVE", user: u })}
-                            >
-                              <FaCheck size={11} />
-                            </button>
-                            <button
-                              title="Reject"
-                              className="btn btn-danger btn-sm p-0"
-                              style={{ width: 26, height: 26, borderRadius: "6px" }}
-                              onClick={() => setCheckerAction({ decision: "REJECT", user: u })}
-                            >
-                              <FaTimes size={11} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }) : (
-                    <tr>
-                      <td colSpan="9" className="text-center py-4 text-muted">
-                        No pending requests.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
+        <div className="card shadow-sm border-0">
+          <div className="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+            <span>User List</span>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowAddUserModal(true)}>
+              <FaUserPlus className="me-2" />
+              Add New User
+            </button>
           </div>
 
-        ) : (
+          <div className="table-responsive">
+            <table className="table modern-table align-middle mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th>EIN</th>
+                  <th>Added Date</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>SOL</th>
+                  <th>Valid Till</th>
+                  <th>Admin</th>
+                  <th>Status</th>
+                  <th width="140">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageData.length > 0 ? pageData.map((u) => {
+                  const statusDisplay = getStatusDisplay(u);
+                  const hasPendingRequest = Boolean(u.pendingRequest);
+                  const canApproveOthers =
+                    hasPendingRequest && !isRaisedByCurrentAdmin(u.pendingRequest, ein);
 
-          // ────────────────────────────────────────────────────────────────
-          // DCO-MAKER VIEW — full user list, can raise Add/Activate/
-          // Deactivate/Delete requests
-          // ────────────────────────────────────────────────────────────────
-          <div className="card shadow-sm border-0">
-
-            <div className="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-              <span>User List</span>
-
-              {isAdmin ? (
-                <button className="btn btn-primary btn-sm" onClick={() => setShowAddUserModal(true)}>
-                  <FaUserPlus className="me-2" />
-                  Add New User
-                </button>
-              ) : (
-                <span className="text-muted small">Add user requests are available to DCO admins only.</span>
-              )}
-            </div>
-
-            <div className="table-responsive">
-              <table className="table modern-table align-middle mb-0">
-                <thead className="table-light">
-                  <tr>
-                    <th>EIN</th>
-                    <th>Added Date</th>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>SOL</th>
-                    <th>Valid Till</th>
-                    <th>Admin</th>
-                    <th>Status</th>
-                    <th width="120">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageData.map((u) => {
-                    const statusDisplay = getStatusDisplay(u);
-                    const hasPendingRequest = Boolean(u.pendingRequest);
-
-                    return (
-                      <tr key={u.ein}>
-                        <td>{u.ein}</td>
-                        <td>{u.aDate}</td>
-                        <td>{u.name}</td>
-                        <td>{u.role}</td>
-                        <td>{u.sol}</td>
-                        <td>{u.validDate}</td>
-                        <td>
-                          {u.isAdmin
-                            ? <span className="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2" style={{ fontSize: 11 }}>Admin</span>
-                            : <span className="text-muted" style={{ fontSize: 12 }}>—</span>}
-                        </td>
-                        <td>
-                          <span className={`badge ${statusDisplay.className}`}>{statusDisplay.label}</span>
-                        </td>
-                        <td>
-                          <div className="d-flex gap-1 flex-wrap">
-                            {u.status === "ACTIVE" ? (
+                  return (
+                    <tr key={u.ein}>
+                      <td>{u.ein}</td>
+                      <td>{u.aDate}</td>
+                      <td>{u.name}</td>
+                      <td>{u.role}</td>
+                      <td>{u.sol}</td>
+                      <td>{u.validDate}</td>
+                      <td>
+                        {u.isAdmin
+                          ? <span className="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2" style={{ fontSize: 11 }}>Admin</span>
+                          : <span className="text-muted" style={{ fontSize: 12 }}>—</span>}
+                      </td>
+                      <td>
+                        <span className={`badge ${statusDisplay.className}`}>{statusDisplay.label}</span>
+                      </td>
+                      <td>
+                        <div className="d-flex gap-1 flex-wrap">
+                          {canApproveOthers ? (
+                            <>
                               <button
-                                className="btn btn-outline-danger btn-sm p-0"
-                                title={hasPendingRequest ? "Pending approval" : "Deactivate"}
+                                title={`Approve ${u.pendingRequest.requestType}`}
+                                className="btn btn-success btn-sm p-0"
                                 style={{ width: 30, height: 30, borderRadius: "6px" }}
-                                disabled={hasPendingRequest}
-                                onClick={() => setConfirmAction({ type: "DEACTIVATE", user: u })}
+                                onClick={() => setCheckerAction({ decision: "APPROVE", user: u })}
                               >
-                                <FaUserSlash size={11} />
+                                <FaCheck size={11} />
                               </button>
-                            ) : (
                               <button
-                                className="btn btn-outline-success btn-sm p-0"
-                                title={hasPendingRequest ? "Pending approval" : "Activate"}
+                                title={`Reject ${u.pendingRequest.requestType}`}
+                                className="btn btn-danger btn-sm p-0"
                                 style={{ width: 30, height: 30, borderRadius: "6px" }}
-                                disabled={hasPendingRequest}
-                                onClick={() => setConfirmAction({ type: "ACTIVATE", user: u })}
+                                onClick={() => setCheckerAction({ decision: "REJECT", user: u })}
                               >
-                                <FaUserCheck size={11} />
+                                <FaTimes size={11} />
                               </button>
-                            )}
-                            <button
-                              className="btn btn-outline-danger btn-sm p-0"
-                              title={hasPendingRequest ? "Pending approval" : "Delete"}
-                              style={{ width: 30, height: 30, borderRadius: "6px" }}
-                              disabled={hasPendingRequest}
-                              onClick={() => setConfirmAction({ type: "DELETE", user: u })}
-                            >
-                              <FaTrash size={11} />
-                            </button>
-                            {u.role === "DCO" && (
-                              u.isAdmin ? (
+                            </>
+                          ) : (
+                            <>
+                              {u.status === "ACTIVE" ? (
                                 <button
-                                  className="btn btn-outline-secondary btn-sm p-0"
-                                  title={hasPendingRequest ? "Pending approval" : "Revoke Admin"}
+                                  className="btn btn-outline-danger btn-sm p-0"
+                                  title={hasPendingRequest ? "Pending approval (your request)" : "Deactivate"}
                                   style={{ width: 30, height: 30, borderRadius: "6px" }}
                                   disabled={hasPendingRequest}
-                                  onClick={() => setConfirmAction({ type: "REVOKE_ADMIN", user: u })}
+                                  onClick={() => setConfirmAction({ type: "DEACTIVATE", user: u })}
                                 >
-                                  <FaUserMinus size={11} />
+                                  <FaUserSlash size={11} />
                                 </button>
                               ) : (
                                 <button
-                                  className="btn btn-outline-info btn-sm p-0"
-                                  title={hasPendingRequest ? "Pending approval" : "Make Admin"}
+                                  className="btn btn-outline-success btn-sm p-0"
+                                  title={hasPendingRequest ? "Pending approval (your request)" : "Activate"}
                                   style={{ width: 30, height: 30, borderRadius: "6px" }}
                                   disabled={hasPendingRequest}
-                                  onClick={() => setConfirmAction({ type: "MAKE_ADMIN", user: u })}
+                                  onClick={() => setConfirmAction({ type: "ACTIVATE", user: u })}
                                 >
-                                  <FaUserShield size={11} />
+                                  <FaUserCheck size={11} />
                                 </button>
-                              )
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="card-footer bg-white">
-              <div className="d-flex justify-content-between align-items-center">
-                <div className="d-flex flex-wrap gap-3" style={{ fontSize: "12px", color: "#6c757d" }}>
-                  <span className="d-flex align-items-center gap-1">
-                    <span className="btn btn-outline-success btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserCheck size={10} /></span> Activate
-                  </span>
-                  <span className="d-flex align-items-center gap-1">
-                    <span className="btn btn-outline-danger btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserSlash size={10} /></span> Deactivate
-                  </span>
-                  <span className="d-flex align-items-center gap-1">
-                    <span className="btn btn-outline-danger btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaTrash size={10} /></span> Delete
-                  </span>
-                  <span className="d-flex align-items-center gap-1">
-                    <span className="btn btn-outline-info btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserShield size={10} /></span> Make Admin
-                  </span>
-                  <span className="d-flex align-items-center gap-1">
-                    <span className="btn btn-outline-secondary btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserMinus size={10} /></span> Revoke Admin
-                  </span>
-                </div>
-                <nav>
-                  <ul className="pagination pagination-sm justify-content-end mb-0">
-                    <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => setCurrentPage(currentPage - 1)}>Previous</button>
-                    </li>
-                    {[...Array(totalPages)].map((_, i) => (
-                      <li key={i} className={`page-item ${currentPage === i + 1 ? "active" : ""}`}>
-                        <button className="page-link" onClick={() => setCurrentPage(i + 1)}>{i + 1}</button>
-                      </li>
-                    ))}
-                    <li className={`page-item ${currentPage === totalPages || totalPages === 0 ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => setCurrentPage(currentPage + 1)}>Next</button>
-                    </li>
-                  </ul>
-                </nav>
-              </div>
-            </div>
+                              )}
+                              <button
+                                className="btn btn-outline-danger btn-sm p-0"
+                                title={hasPendingRequest ? "Pending approval (your request)" : "Delete"}
+                                style={{ width: 30, height: 30, borderRadius: "6px" }}
+                                disabled={hasPendingRequest}
+                                onClick={() => setConfirmAction({ type: "DELETE", user: u })}
+                              >
+                                <FaTrash size={11} />
+                              </button>
+                              {u.role === "DCO" && (
+                                u.isAdmin ? (
+                                  <button
+                                    className="btn btn-outline-secondary btn-sm p-0"
+                                    title={hasPendingRequest ? "Pending approval (your request)" : "Revoke Admin"}
+                                    style={{ width: 30, height: 30, borderRadius: "6px" }}
+                                    disabled={hasPendingRequest}
+                                    onClick={() => setConfirmAction({ type: "REVOKE_ADMIN", user: u })}
+                                  >
+                                    <FaUserMinus size={11} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn btn-outline-info btn-sm p-0"
+                                    title={hasPendingRequest ? "Pending approval (your request)" : "Make Admin"}
+                                    style={{ width: 30, height: 30, borderRadius: "6px" }}
+                                    disabled={hasPendingRequest}
+                                    onClick={() => setConfirmAction({ type: "MAKE_ADMIN", user: u })}
+                                  >
+                                    <FaUserShield size={11} />
+                                  </button>
+                                )
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan="9" className="text-center py-4 text-muted">No users found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
-        )}
+          <div className="card-footer bg-white">
+            <div className="d-flex justify-content-between align-items-center">
+              <div className="d-flex flex-wrap gap-3" style={{ fontSize: "12px", color: "#6c757d" }}>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-outline-success btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserCheck size={10} /></span> Activate
+                </span>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-outline-danger btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserSlash size={10} /></span> Deactivate
+                </span>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-outline-danger btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaTrash size={10} /></span> Delete
+                </span>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-outline-info btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserShield size={10} /></span> Make Admin
+                </span>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-outline-secondary btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaUserMinus size={10} /></span> Revoke Admin
+                </span>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-success btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaCheck size={10} /></span> Approve
+                </span>
+                <span className="d-flex align-items-center gap-1">
+                  <span className="btn btn-danger btn-sm p-0 d-flex align-items-center justify-content-center" style={{ width: 20, height: 20, borderRadius: "4px", pointerEvents: "none" }}><FaTimes size={10} /></span> Reject
+                </span>
+              </div>
+              <nav>
+                <ul className="pagination pagination-sm justify-content-end mb-0">
+                  <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
+                    <button className="page-link" onClick={() => setCurrentPage(currentPage - 1)}>Previous</button>
+                  </li>
+                  {[...Array(totalPages)].map((_, i) => (
+                    <li key={i} className={`page-item ${currentPage === i + 1 ? "active" : ""}`}>
+                      <button className="page-link" onClick={() => setCurrentPage(i + 1)}>{i + 1}</button>
+                    </li>
+                  ))}
+                  <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
+                    <button className="page-link" onClick={() => setCurrentPage(currentPage + 1)}>Next</button>
+                  </li>
+                </ul>
+              </nav>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Maker: confirm + remark before raising a request */}
+      {/* Maker: confirm before raising a request */}
       {confirmAction && (
-        <RemarkModal
+        <ConfirmModal
           title={
             confirmAction.type === "MAKE_ADMIN"
               ? "Make Admin"
@@ -698,13 +583,13 @@ function ProfileManagement({ user }) {
           description={
             <>
               This will send a <strong>{confirmAction.type.toLowerCase()}</strong> request for EIN{" "}
-              <strong>{confirmAction.user.ein}</strong> to the DCO-Checker for approval.
+              <strong>{confirmAction.user.ein}</strong> for approval by another DCO admin.
             </>
           }
           confirmLabel="Submit"
           confirmVariant="primary"
           submitting={submitting}
-          onConfirm={(remark) => submitMakerRequest(confirmAction.type, confirmAction.user, remark)}
+          onConfirm={() => submitMakerRequest(confirmAction.type, confirmAction.user)}
           onClose={() => setConfirmAction(null)}
         />
       )}
@@ -713,14 +598,14 @@ function ProfileManagement({ user }) {
       {showAddUserModal && (
         <AddNewUserModal
           submitting={submitting}
-          onConfirm={(newUser, remark) => submitMakerRequest("ADD", newUser, remark)}
+          onConfirm={(newUser) => submitMakerRequest("ADD", newUser)}
           onClose={() => setShowAddUserModal(false)}
         />
       )}
 
-      {/* Checker: approve / reject + remark */}
+      {/* Checker: approve / reject */}
       {checkerAction && (
-        <RemarkModal
+        <ConfirmModal
           title={`${checkerAction.decision === "APPROVE" ? "Approve" : "Reject"} Request — ${checkerAction.user.pendingRequest.reqId}`}
           description={
             <>
@@ -732,7 +617,7 @@ function ProfileManagement({ user }) {
           confirmLabel={checkerAction.decision === "APPROVE" ? "Approve" : "Reject"}
           confirmVariant={checkerAction.decision === "APPROVE" ? "success" : "danger"}
           submitting={submitting}
-          onConfirm={(remark) => resolveCheckerRequest(checkerAction.decision, checkerAction.user, remark)}
+          onConfirm={() => resolveCheckerRequest(checkerAction.decision, checkerAction.user)}
           onClose={() => setCheckerAction(null)}
         />
       )}
@@ -754,51 +639,28 @@ function ProfileManagement({ user }) {
   );
 }
 
-// ── Shared remark modal ─────────────────────────────────────────────────────
-// Used both by the Maker (confirm Add/Activate/Deactivate/Delete before
-// raising the request) and the Checker (Approve/Reject) — same shape,
-// different title/colour/label, so it isn't duplicated for each caller.
-const RemarkModal = ({ title, description, confirmLabel, confirmVariant, submitting, onConfirm, onClose }) => {
-  const [remark, setRemark] = useState("");
-  const [error, setError] = useState("");
-
-  const handleSubmit = () => {
-    if (!remark.trim()) { setError("Remark is required."); return; }
-    onConfirm(remark.trim());
-  };
-
-  return (
-    <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-      <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content border-0 shadow" style={{ borderRadius: "10px", overflow: "hidden" }}>
-          <div className="modal-header">
-            <h5 className="modal-title">{title}</h5>
-            <button type="button" className="btn-close" onClick={onClose} />
-          </div>
-          <div className="modal-body">
-            {description && <p className="mb-2">{description}</p>}
-            <label className="form-label">Remark <span className="text-danger">*</span></label>
-            <textarea
-              className={`form-control ${error ? "is-invalid" : ""}`}
-              rows={3}
-              maxLength={300}
-              placeholder="Enter remark..."
-              value={remark}
-              onChange={(e) => { setRemark(e.target.value); setError(""); }}
-            />
-            {error && <div className="text-danger small mt-1">{error}</div>}
-          </div>
-          <div className="modal-footer">
-            <button className={`btn btn-${confirmVariant}`} disabled={submitting} onClick={handleSubmit}>
-              {submitting ? <FaSpinner className="spin me-1" /> : null} {confirmLabel}
-            </button>
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          </div>
+// ── Shared confirm modal (no remark) ────────────────────────────────────────
+const ConfirmModal = ({ title, description, confirmLabel, confirmVariant, submitting, onConfirm, onClose }) => (
+  <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+    <div className="modal-dialog modal-dialog-centered">
+      <div className="modal-content border-0 shadow" style={{ borderRadius: "10px", overflow: "hidden" }}>
+        <div className="modal-header">
+          <h5 className="modal-title">{title}</h5>
+          <button type="button" className="btn-close" onClick={onClose} />
+        </div>
+        <div className="modal-body">
+          {description && <p className="mb-0">{description}</p>}
+        </div>
+        <div className="modal-footer">
+          <button className={`btn btn-${confirmVariant}`} disabled={submitting} onClick={onConfirm}>
+            {submitting ? <FaSpinner className="spin me-1" /> : null} {confirmLabel}
+          </button>
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </div>
     </div>
-  );
-};
+  </div>
+);
 
 // ── Checker: full request detail ────────────────────────────────────────────
 const RequestViewModal = ({ user, onClose }) => {
@@ -826,7 +688,6 @@ const RequestViewModal = ({ user, onClose }) => {
                   ["Valid Till", user.validDate],
                   ["Requested By", req.requestedBy],
                   ["Requested On", req.requestedOn],
-                  ["Maker Remark", req.makerRemark],
                 ].map(([label, value]) => (
                   <div className="col-md-6" key={label}>
                     <div className="text-muted" style={{ fontSize: "11px" }}>{label}</div>
@@ -846,11 +707,8 @@ const RequestViewModal = ({ user, onClose }) => {
 };
 
 // ── Maker: Add New User modal ───────────────────────────────────────────────
-// SRS: "There will be an option to add a new user. For addition of new
-// user, a drop down will be provided for selecting the type of new user:
-// DCO user / Internal Auditor / External Auditor / HO/DBD / Temp user."
-// Submission still goes through the same maker-checker path — this only
-// collects the details + user type, the DCO-Checker approves it afterwards.
+// Flow: select type → EIN + Fetch (HRMS) → fill name/email/sol/agency
+// Valid From/To only for Internal / External Auditor.
 const AddNewUserModal = ({ submitting, onConfirm, onClose }) => {
   const [form, setForm] = useState({
     userType: "",
@@ -858,27 +716,97 @@ const AddNewUserModal = ({ submitting, onConfirm, onClose }) => {
     name: "",
     sol: "",
     email: "",
+    agency: "",
     fromDate: "",
     toDate: "",
   });
-  const [remark, setRemark] = useState("");
   const [errors, setErrors] = useState({});
+  const [fetching, setFetching] = useState(false);
+  const [fetched, setFetched] = useState(false);
 
-  // Time frame (From/To date) is mandatory for every user type except DCO user
-  const isTimeBound = form.userType !== "" && form.userType !== "DCO_USER";
+  const isAuditor =
+    form.userType === "INTERNAL_AUDITOR" || form.userType === "EXTERNAL_AUDITOR";
+  const showDetails = form.userType !== "";
 
   const handleChange = (field) => (e) => {
-    setForm((p) => ({ ...p, [field]: e.target.value }));
-    setErrors((p) => ({ ...p, [field]: "" }));
+    const value = e.target.value;
+    setErrors((p) => ({ ...p, [field]: "", fetch: "" }));
+
+    if (field === "userType") {
+      setFetched(false);
+      setForm({
+        userType: value,
+        ein: "",
+        name: "",
+        sol: "",
+        email: "",
+        agency: "",
+        fromDate: "",
+        toDate: "",
+      });
+      return;
+    }
+    if (field === "ein") {
+      setFetched(false);
+      setForm((p) => ({
+        ...p,
+        ein: value,
+        name: "",
+        sol: "",
+        email: "",
+        agency: "",
+      }));
+      return;
+    }
+    setForm((p) => ({ ...p, [field]: value }));
+  };
+
+  const handleFetchHrms = async () => {
+    const ein = form.ein.trim();
+    if (!ein) {
+      setErrors((p) => ({ ...p, ein: "Enter EIN to fetch." }));
+      return;
+    }
+    if (!form.userType) {
+      setErrors((p) => ({ ...p, userType: "Please select a user type first." }));
+      return;
+    }
+    setFetching(true);
+    setErrors((p) => ({ ...p, ein: "", fetch: "" }));
+    try {
+      const res = await api.get("/api/userManagement/hrms", { params: { ein } });
+      const data = res.data || {};
+      setForm((p) => ({
+        ...p,
+        ein: data.ein || ein,
+        name: data.name || "",
+        email: data.email || "",
+        sol: data.sol || "",
+        agency: data.agency || "",
+      }));
+      setFetched(true);
+    } catch (err) {
+      setFetched(false);
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        "HRMS fetch failed";
+      setErrors((p) => ({ ...p, fetch: String(msg) }));
+      setForm((p) => ({ ...p, name: "", email: "", sol: "", agency: "" }));
+    } finally {
+      setFetching(false);
+    }
   };
 
   const validate = () => {
     const next = {};
     if (!form.userType) next.userType = "Please select a user type.";
     if (!form.ein.trim()) next.ein = "EIN is required.";
-    if (!form.name.trim()) next.name = "Name is required.";
+    if (!fetched) next.fetch = "Fetch HRMS details before submit.";
+    if (!form.name.trim()) next.name = "Name is required (fetch from HRMS).";
 
-    if (isTimeBound) {
+    if (isAuditor) {
       if (!form.fromDate) next.fromDate = "From date is required.";
       if (!form.toDate) next.toDate = "To date is required.";
       if (form.fromDate && form.toDate && form.toDate < form.fromDate) {
@@ -886,30 +814,27 @@ const AddNewUserModal = ({ submitting, onConfirm, onClose }) => {
       }
     }
 
-    if (!remark.trim()) next.remark = "Remark is required.";
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
   const handleSubmit = () => {
     if (!validate()) return;
-    onConfirm(
-      {
-        ein: form.ein.trim(),
-        name: form.name.trim(),
-        sol: form.sol.trim(),
-        email: form.email.trim(),
-        userType: form.userType,
-        fromDate: isTimeBound ? form.fromDate : "",
-        toDate: isTimeBound ? form.toDate : "",
-      },
-      remark.trim()
-    );
+    onConfirm({
+      ein: form.ein.trim(),
+      name: form.name.trim(),
+      sol: form.sol.trim(),
+      email: form.email.trim(),
+      agency: form.agency.trim(),
+      userType: form.userType,
+      fromDate: isAuditor ? form.fromDate : "",
+      toDate: isAuditor ? form.toDate : "",
+    });
   };
 
   return (
     <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-      <div className="modal-dialog  modal-dialog-centered">
+      <div className="modal-dialog modal-dialog-centered">
         <div className="modal-content border-0 shadow" style={{ borderRadius: "10px", overflow: "hidden" }}>
           <div className="modal-header">
             <h5 className="modal-title">Add New User</h5>
@@ -917,7 +842,6 @@ const AddNewUserModal = ({ submitting, onConfirm, onClose }) => {
           </div>
 
           <div className="modal-body">
-
             <div className="mb-2">
               <label className="form-label">
                 User Type <span className="text-danger">*</span>
@@ -935,109 +859,99 @@ const AddNewUserModal = ({ submitting, onConfirm, onClose }) => {
               {errors.userType && <div className="invalid-feedback">{errors.userType}</div>}
             </div>
 
-            <div className="row">
-              <div className="col-md-6 mb-3">
-                <label className="form-label">
-                  EIN <span className="text-danger">*</span>
-                </label>
-                <input
-                  type="text"
-                  className={`form-control ${errors.ein ? "is-invalid" : ""}`}
-                  value={form.ein}
-                  onChange={handleChange("ein")}
-                />
-                {errors.ein && <div className="invalid-feedback">{errors.ein}</div>}
-              </div>
-
-              <div className="col-md-6 mb-3">
-                <label className="form-label">
-                  Name <span className="text-danger">*</span>
-                </label>
-                <input
-                  type="text"
-                  className={`form-control ${errors.name ? "is-invalid" : ""}`}
-                  value={form.name}
-                  onChange={handleChange("name")}
-                />
-                {errors.name && <div className="invalid-feedback">{errors.name}</div>}
-              </div>
-            </div>
-
-            <div className="row">
-              <div className="col-md-6 mb-3">
-                <label className="form-label">SOL</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={form.sol}
-                  onChange={handleChange("sol")}
-                />
-              </div>
-              <div className="col-md-6 mb-3">
-                <label className="form-label">Email</label>
-                <input
-                  type="email"
-                  className="form-control"
-                  value={form.email}
-                  onChange={handleChange("email")}
-                />
-              </div>
-            </div>
-
-            {isTimeBound && (
-              <div className="row">
-                <div className="col-md-6 mb-3">
+            {showDetails && (
+              <>
+                <div className="mb-3">
                   <label className="form-label">
-                    From Date <span className="text-danger">*</span>
+                    EIN <span className="text-danger">*</span>
                   </label>
-                  <input
-                    type="date"
-                    className={`form-control ${errors.fromDate ? "is-invalid" : ""}`}
-                    value={form.fromDate}
-                    onChange={handleChange("fromDate")}
-                  />
-                  {errors.fromDate && <div className="invalid-feedback">{errors.fromDate}</div>}
+                  <div className="d-flex gap-2">
+                    <input
+                      type="text"
+                      className={`form-control ${errors.ein ? "is-invalid" : ""}`}
+                      value={form.ein}
+                      onChange={handleChange("ein")}
+                      placeholder="Enter EIN"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary text-nowrap"
+                      disabled={fetching || !form.ein.trim()}
+                      onClick={handleFetchHrms}
+                    >
+                      {fetching ? <FaSpinner className="spin" /> : "Fetch"}
+                    </button>
+                  </div>
+                  {errors.ein && <div className="text-danger small mt-1">{errors.ein}</div>}
+                  {errors.fetch && <div className="text-danger small mt-1">{errors.fetch}</div>}
                 </div>
-                <div className="col-md-6 mb-3">
-                  <label className="form-label">
-                    To Date <span className="text-danger">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    className={`form-control ${errors.toDate ? "is-invalid" : ""}`}
-                    value={form.toDate}
-                    min={form.fromDate || undefined}
-                    onChange={handleChange("toDate")}
-                  />
-                  {errors.toDate && <div className="invalid-feedback">{errors.toDate}</div>}
+
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">User Name</label>
+                    <input type="text" className="form-control" value={form.name} readOnly />
+                    {errors.name && <div className="text-danger small">{errors.name}</div>}
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Email</label>
+                    <input type="email" className="form-control" value={form.email} readOnly />
+                  </div>
                 </div>
-              </div>
+
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">SOL</label>
+                    <input type="text" className="form-control" value={form.sol} readOnly />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Agency</label>
+                    <input type="text" className="form-control" value={form.agency} readOnly />
+                  </div>
+                </div>
+
+                {isAuditor && (
+                  <div className="row">
+                    <div className="col-md-6 mb-3">
+                      <label className="form-label">
+                        From Date <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        className={`form-control ${errors.fromDate ? "is-invalid" : ""}`}
+                        value={form.fromDate}
+                        onChange={handleChange("fromDate")}
+                      />
+                      {errors.fromDate && <div className="invalid-feedback">{errors.fromDate}</div>}
+                    </div>
+                    <div className="col-md-6 mb-3">
+                      <label className="form-label">
+                        To Date <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        className={`form-control ${errors.toDate ? "is-invalid" : ""}`}
+                        value={form.toDate}
+                        min={form.fromDate || undefined}
+                        onChange={handleChange("toDate")}
+                      />
+                      {errors.toDate && <div className="invalid-feedback">{errors.toDate}</div>}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-
-            <div className="mb-1">
-              <label className="form-label">
-                Remark <span className="text-danger">*</span>
-              </label>
-              <textarea
-                className={`form-control ${errors.remark ? "is-invalid" : ""}`}
-                rows={2}
-                maxLength={300}
-                placeholder="Reason for adding this user..."
-                value={remark}
-                onChange={(e) => { setRemark(e.target.value); setErrors((p) => ({ ...p, remark: "" })); }}
-              />
-              {errors.remark && <div className="invalid-feedback">{errors.remark}</div>}
-            </div>
-
           </div>
 
           <div className="modal-footer">
-            <button className="btn btn-primary" disabled={submitting} onClick={handleSubmit}>
+            <button
+              className="btn btn-primary"
+              disabled={submitting || !showDetails}
+              onClick={handleSubmit}
+            >
               {submitting ? <FaSpinner className="spin me-1" /> : null} Submit
             </button>
             <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           </div>
-
         </div>
       </div>
     </div>
