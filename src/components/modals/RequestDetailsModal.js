@@ -1,5 +1,5 @@
 import React from "react";
-import "../styles/tableAlign.css";
+import "../../styles/tableAlign.css";
 
 const DetailItem = ({ label, value }) => (
     <div className="col-lg-4 col-md-6">

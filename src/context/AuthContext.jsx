@@ -8,9 +8,9 @@ import React, {
 } from "react";
 import api, {
   clearAccessToken,
+  refreshAccessToken,
   resetSessionRestoreCache,
   restoreSession,
-  setAccessToken,
 } from "../api/axiosConfig";
 
 const AuthContext = createContext(null);
@@ -20,8 +20,7 @@ export function AuthProvider({ children }) {
   const [theme, setTheme] = useState("light");
   const [booting, setBooting] = useState(true);
 
-  const login = useCallback((userData) => {
-    // Never keep accessToken in React state (memory via setAccessToken only)
+  const applyProfile = useCallback((userData) => {
     if (!userData || typeof userData !== "object") {
       setUser(null);
       return;
@@ -34,6 +33,16 @@ export function AuthProvider({ children }) {
       allowedApps: profile.allowedApps || ["MAT", "MEA"],
     });
   }, []);
+
+  const login = useCallback((userData) => {
+    applyProfile(userData);
+  }, [applyProfile]);
+
+  const refreshSession = useCallback(async () => {
+    const data = await refreshAccessToken();
+    applyProfile(data);
+    return data;
+  }, [applyProfile]);
 
   const logout = useCallback(() => {
     api
@@ -54,14 +63,7 @@ export function AuthProvider({ children }) {
       .then((data) => {
         if (cancelled) return;
         if (data?.accessToken) {
-          const { accessToken, ...profile } = data;
-          setAccessToken(accessToken);
-          setUser({
-            ...profile,
-            isAdmin: Boolean(profile.isAdmin),
-            activeApp: profile.activeApp === "MEA" ? "MEA" : "MAT",
-            allowedApps: profile.allowedApps || ["MAT", "MEA"],
-          });
+          applyProfile(data);
         } else {
           // No session — stay on login; do NOT call /logout (would clear a valid cookie race)
           clearAccessToken();
@@ -74,7 +76,7 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyProfile]);
 
   useEffect(() => {
     const handler = () => logout();
@@ -87,11 +89,12 @@ export function AuthProvider({ children }) {
       user,
       login,
       logout,
+      refreshSession,
       booting,
       theme,
       setTheme,
     }),
-    [user, login, logout, booting, theme]
+    [user, login, logout, refreshSession, booting, theme]
   );
 
   return (

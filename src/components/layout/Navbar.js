@@ -11,11 +11,11 @@ import {
   FaFile,
   FaUserCircle,
 } from "react-icons/fa";
-import "../styles/main.css";
-import { APPS, useApplication } from "../context/ApplicationContext";
-import { APP_BRAND } from "../config/menuConfig";
-import { iconForMenu } from "../config/menuApiAdapter";
-import { useMenus } from "../context/MenuContext";
+import "../../styles/main.css";
+import { APPS, useApplication } from "../../context/ApplicationContext";
+import { APP_BRAND } from "../../config/menuConfig";
+import { iconForMenu } from "../../config/menuApiAdapter";
+import { useMenus } from "../../context/MenuContext";
 import AppToggle from "./AppToggle";
 
 const ICONS = {
@@ -25,6 +25,16 @@ const ICONS = {
   file: FaFile,
   users: FaUsers,
 };
+
+function isUserManagementPath(path) {
+  if (!path) return false;
+  const p = String(path).split("?")[0].replace(/\/$/, "").toLowerCase();
+  return (
+    p === "/profilemanagement" ||
+    p === "/profile-management" ||
+    p === "/user-approval-queue"
+  );
+}
 
 function MenuIcon({ name, className = "me-1" }) {
   const Icon = ICONS[name] || FaFileAlt;
@@ -47,6 +57,14 @@ function Navbar({ user, onLogout }) {
   const pathActive = (path) => path && location.pathname === path;
   const dropdownActive = (node) =>
     (node.children || []).some((c) => pathActive(c.path));
+
+  const openUserManagement = (e) => {
+    e.preventDefault();
+    navigate("/profileManagement", {
+      replace: location.pathname === "/profileManagement",
+      state: { reloadAt: Date.now() },
+    });
+  };
 
   const canToggle =
     allowedApps.includes(APPS.MAT) && allowedApps.includes(APPS.MEA);
@@ -161,7 +179,10 @@ function Navbar({ user, onLogout }) {
                                 pathActive(child.path) ? "active" : ""
                               }`}
                               to={child.path}
-                              onClick={() => setOpenCode(null)}
+                              onClick={(e) => {
+                                setOpenCode(null);
+                                if (isUserManagementPath(child.path)) openUserManagement(e);
+                              }}
                             >
                               <span>{child.label}</span>
                             </Link>
@@ -179,6 +200,9 @@ function Navbar({ user, onLogout }) {
                         pathActive(item.path) ? "active fw-semibold text-primary" : ""
                       }`}
                       to={item.path || "/home"}
+                      onClick={(e) => {
+                        if (isUserManagementPath(item.path)) openUserManagement(e);
+                      }}
                     >
                       <MenuIcon name={iconForMenu(item)} />
                       {item.label}
@@ -239,7 +263,10 @@ function Navbar({ user, onLogout }) {
                       key={pm.id}
                       className="dropdown-item d-flex align-items-center gap-2"
                       to={pm.path}
-                      onClick={() => setProfileOpen(false)}
+                      onClick={(e) => {
+                        setProfileOpen(false);
+                        if (isUserManagementPath(pm.path)) openUserManagement(e);
+                      }}
                     >
                       <MenuIcon name={iconForMenu(pm)} className="" />
                       {pm.label}

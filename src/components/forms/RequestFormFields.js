@@ -1,6 +1,6 @@
 import React from "react";
 import { FaSearch, FaSpinner, FaFileAlt } from "react-icons/fa";
-import { maskAccountNumber } from "../utils/sanitize";
+import { maskAccountNumber } from "../../utils/sanitize";
 
 // ── Shared label style matching RaisedRequest ─────────────────────────────────
 const Lbl = ({ children }) => (

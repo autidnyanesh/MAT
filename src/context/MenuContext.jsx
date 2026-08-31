@@ -17,7 +17,7 @@ const EMPTY = { menus: [], profileMenus: [] };
 
 export function MenuProvider({ children }) {
   const { user, booting } = useAuth();
-  const { activeApp } = useApplication();
+  const { activeApp, appSelected } = useApplication();
   const [menuData, setMenuData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -49,13 +49,13 @@ export function MenuProvider({ children }) {
 
   useEffect(() => {
     if (booting) return;
-    if (!user?.role) {
+    if (!user?.role || !appSelected) {
       setMenuData(null);
       setError(null);
       return;
     }
     loadMenus(activeApp);
-  }, [booting, user?.role, activeApp, loadMenus]);
+  }, [booting, user?.role, activeApp, appSelected, loadMenus]);
 
   const value = useMemo(
     () => ({
@@ -65,9 +65,9 @@ export function MenuProvider({ children }) {
       application: menuData?.application,
       loading,
       error,
-      reload: () => user?.role && loadMenus(activeApp),
+      reload: () => user?.role && appSelected && loadMenus(activeApp),
     }),
-    [menuData, loading, error, loadMenus, user?.role, activeApp]
+    [menuData, loading, error, loadMenus, user?.role, activeApp, appSelected]
   );
 
   return <MenuContext.Provider value={value}>{children}</MenuContext.Provider>;

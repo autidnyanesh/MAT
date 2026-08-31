@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { APPS } from "../context/ApplicationContext";
+import { APPS } from "../../context/ApplicationContext";
 
 /**
  * Navbar MAT ↔ MEA drag switch.

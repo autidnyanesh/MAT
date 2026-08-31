@@ -49,3 +49,35 @@
     width: 18px;
     height: 18px;
 }
+
+.modern-table thead th.sortable-th {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.modern-table thead th.sortable-th:hover {
+    background: #dceaf8;
+    color: #1e3a5f;
+}
+
+.modern-table thead th.sortable-th.is-sorted {
+    color: #1d4ed8;
+}
+
+.sortable-th-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sortable-th-icon {
+    font-size: 10px;
+    opacity: 0.35;
+    line-height: 1;
+}
+
+.sortable-th-icon.active {
+    opacity: 1;
+    color: #2563eb;
+}

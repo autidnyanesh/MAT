@@ -13,6 +13,7 @@ export const APPS = Object.freeze({
 });
 
 export const ACTIVE_APP_STORAGE_KEY = "mat_active_app";
+export const SELECT_APP_PATH = "/select-app";
 
 const ApplicationContext = createContext(null);
 
@@ -23,12 +24,21 @@ function readStoredApp() {
   } catch {
     /* sessionStorage unavailable */
   }
-  return APPS.MAT;
+  return null;
+}
+
+function normalizeAllowed(apps) {
+  const next = Array.isArray(apps) && apps.length
+    ? apps.filter((a) => a === APPS.MAT || a === APPS.MEA)
+    : [APPS.MAT, APPS.MEA];
+  return next.length ? next : [APPS.MAT];
 }
 
 export function ApplicationProvider({ children }) {
-  const [activeApp, setActiveAppState] = useState(readStoredApp);
+  const stored = readStoredApp();
+  const [activeApp, setActiveAppState] = useState(stored || APPS.MAT);
   const [allowedApps, setAllowedAppsState] = useState([APPS.MAT, APPS.MEA]);
+  const [appSelected, setAppSelected] = useState(() => stored != null);
 
   const setActiveApp = useCallback((app) => {
     const next = app === APPS.MEA ? APPS.MEA : APPS.MAT;
@@ -44,11 +54,58 @@ export function ApplicationProvider({ children }) {
   }, []);
 
   const setAllowedApps = useCallback((apps) => {
-    const next = Array.isArray(apps) && apps.length
-      ? apps.filter((a) => a === APPS.MAT || a === APPS.MEA)
-      : [APPS.MAT, APPS.MEA];
-    setAllowedAppsState(next.length ? next : [APPS.MAT]);
+    setAllowedAppsState(normalizeAllowed(apps));
   }, []);
+
+  /** After credentials succeed: clear last app so the picker is required. */
+  const beginAppSelection = useCallback((apps) => {
+    setAllowedAppsState(normalizeAllowed(apps));
+    setAppSelected(false);
+    try {
+      sessionStorage.removeItem(ACTIVE_APP_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** User (or auto-select) chose MAT/MEA. Home can load. */
+  const selectApp = useCallback(
+    (app) => {
+      const next = app === APPS.MEA ? APPS.MEA : APPS.MAT;
+      if (allowedApps.length && !allowedApps.includes(next)) {
+        return false;
+      }
+      setActiveApp(next);
+      setAppSelected(true);
+      return true;
+    },
+    [allowedApps, setActiveApp]
+  );
+
+  /**
+   * F5 / session restore: reuse stored choice, or skip picker when only one app is allowed.
+   * Returns true when home can load without the picker.
+   */
+  const hydrateFromStorage = useCallback(
+    (apps) => {
+      const allowed = normalizeAllowed(apps);
+      setAllowedAppsState(allowed);
+      const storedApp = readStoredApp();
+      if (storedApp && allowed.includes(storedApp)) {
+        setActiveApp(storedApp);
+        setAppSelected(true);
+        return true;
+      }
+      if (allowed.length === 1) {
+        setActiveApp(allowed[0]);
+        setAppSelected(true);
+        return true;
+      }
+      setAppSelected(false);
+      return false;
+    },
+    [setActiveApp]
+  );
 
   /** Switch active application without logging out. Returns false if not allowed. */
   const switchApp = useCallback(
@@ -56,20 +113,25 @@ export function ApplicationProvider({ children }) {
       const next = app === APPS.MEA ? APPS.MEA : APPS.MAT;
       if (!allowedApps.includes(next)) return false;
       setActiveApp(next);
+      setAppSelected(true);
       return true;
     },
     [allowedApps, setActiveApp]
   );
 
   const resetApplication = useCallback(() => {
-    setActiveApp(APPS.MAT);
+    setActiveAppState(APPS.MAT);
     setAllowedAppsState([APPS.MAT, APPS.MEA]);
+    setAppSelected(false);
     try {
       sessionStorage.removeItem(ACTIVE_APP_STORAGE_KEY);
     } catch {
       /* ignore */
     }
-  }, [setActiveApp]);
+    if (typeof document !== "undefined") {
+      document.body.dataset.app = APPS.MAT;
+    }
+  }, []);
 
   useEffect(() => {
     document.body.dataset.app = activeApp;
@@ -79,8 +141,12 @@ export function ApplicationProvider({ children }) {
     () => ({
       activeApp,
       allowedApps,
+      appSelected,
       setActiveApp,
       setAllowedApps,
+      beginAppSelection,
+      selectApp,
+      hydrateFromStorage,
       switchApp,
       resetApplication,
       isMAT: activeApp === APPS.MAT,
@@ -89,8 +155,12 @@ export function ApplicationProvider({ children }) {
     [
       activeApp,
       allowedApps,
+      appSelected,
       setActiveApp,
       setAllowedApps,
+      beginAppSelection,
+      selectApp,
+      hydrateFromStorage,
       switchApp,
       resetApplication,
     ]

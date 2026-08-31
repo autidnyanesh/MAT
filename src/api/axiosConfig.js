@@ -35,11 +35,6 @@ function apiBaseUrl() {
   return String(v).trim().replace(/\/$/, "");
 }
 
-function refreshUrl() {
-  const base = apiBaseUrl();
-  return base ? `${base}/api/refresh` : "/api/refresh";
-}
-
 const api = axios.create({
   baseURL: apiBaseUrl(),
   withCredentials: true,
@@ -78,22 +73,31 @@ function isAuthUrl(url = "") {
 }
 
 /**
- * One shared POST /api/refresh for page-load restore.
+ * Always POST /api/refresh and store the new access JWT in memory.
+ * Used by inactivity OK, F5 restore, and 401 retry.
+ */
+export async function refreshAccessToken() {
+  const res = await api.post("/api/refresh", {});
+  const data = res.data;
+  if (!data?.accessToken) throw new Error("No access token from refresh");
+  setAccessToken(data.accessToken);
+  return data;
+}
+
+/**
+ * One shared POST /api/refresh for page-load restore (F5).
  * Uses api instance so response decrypt + credentials match other calls.
  */
 export function restoreSession() {
   if (!sessionRestorePromise) {
-    sessionRestorePromise = api
-      .post("/api/refresh", {})
-      .then((res) => res.data)
-      .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn(
-          "[MAT] session restore failed",
-          err?.response?.status || err?.message
-        );
-        return null;
-      });
+    sessionRestorePromise = refreshAccessToken().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[MAT] session restore failed",
+        err?.response?.status || err?.message
+      );
+      return null;
+    });
   }
   return sessionRestorePromise;
 }
@@ -179,12 +183,9 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const response = await api.post("/api/refresh", {});
-        const newToken = response.data?.accessToken;
-        if (!newToken) throw new Error("No access token from refresh");
-        setAccessToken(newToken);
-        processQueue(null, newToken);
-        originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
+        const data = await refreshAccessToken();
+        processQueue(null, data.accessToken);
+        originalRequest.headers["Authorization"] = `Bearer ${data.accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);

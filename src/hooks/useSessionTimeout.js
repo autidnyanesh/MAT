@@ -1,18 +1,29 @@
 import { useEffect, useRef, useCallback } from "react";
 
-const TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes of inactivity
-const WARNING_MS = 14 * 60 * 1000; // show warning 1 minute before logout (at the 14-minute mark)
+const TIMEOUT_MS = 2 * 60 * 1000;
+const WARNING_MS = 1 * 60 * 1000;
 
 /**
- * Automatically logs out the user after TIMEOUT_MS of inactivity.
- * Resets the timer on any mouse/keyboard/touch activity.
- *
- * @param {Function} onLogout  - called when session expires
- * @param {Function} onWarning - called 1 minute before expiry (optional)
+ * Idle warning at 14 min, logout at 15 min.
+ * Callbacks are read from refs so re-renders do not restart the clock.
+ * While the warning is open, activity does not postpone logout.
  */
-const useSessionTimeout = (onLogout, onWarning) => {
+const useSessionTimeout = (onLogout, onWarning, { warningOpen = false } = {}) => {
   const logoutTimer = useRef(null);
   const warningTimer = useRef(null);
+  const onLogoutRef = useRef(onLogout);
+  const onWarningRef = useRef(onWarning);
+  const warningOpenRef = useRef(warningOpen);
+
+  useEffect(() => {
+    onLogoutRef.current = onLogout;
+  }, [onLogout]);
+  useEffect(() => {
+    onWarningRef.current = onWarning;
+  }, [onWarning]);
+  useEffect(() => {
+    warningOpenRef.current = warningOpen;
+  }, [warningOpen]);
 
   const clearTimers = useCallback(() => {
     if (logoutTimer.current) clearTimeout(logoutTimer.current);
@@ -21,27 +32,33 @@ const useSessionTimeout = (onLogout, onWarning) => {
 
   const resetTimers = useCallback(() => {
     clearTimers();
-
-    if (onWarning) {
-      warningTimer.current = setTimeout(onWarning, WARNING_MS);
+    if (onWarningRef.current) {
+      warningTimer.current = setTimeout(() => {
+        onWarningRef.current?.();
+      }, WARNING_MS);
     }
-
     logoutTimer.current = setTimeout(() => {
-      onLogout();
+      onLogoutRef.current?.();
     }, TIMEOUT_MS);
-  }, [clearTimers, onLogout, onWarning]);
+  }, [clearTimers]);
 
   useEffect(() => {
-    const events = ["mousemove", "keydown", "mousedown", "touchstart", "scroll"];
+    const onActivity = () => {
+      if (warningOpenRef.current) return;
+      resetTimers();
+    };
 
-    events.forEach((e) => window.addEventListener(e, resetTimers));
+    const events = ["keydown", "mousedown", "touchstart"];
+    events.forEach((e) => window.addEventListener(e, onActivity));
     resetTimers();
 
     return () => {
       clearTimers();
-      events.forEach((e) => window.removeEventListener(e, resetTimers));
+      events.forEach((e) => window.removeEventListener(e, onActivity));
     };
   }, [resetTimers, clearTimers]);
+
+  return resetTimers;
 };
 
 export default useSessionTimeout;
